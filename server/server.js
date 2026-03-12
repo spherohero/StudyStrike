@@ -245,6 +245,61 @@ app.delete('/cards/:cardId', async (req, res) => {
   }
 });
 
+app.post('/decks/:id/duplicate', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const originalDeckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1`,
+      [id]
+    );
+
+    if (originalDeckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    const originalDeck = originalDeckResult.rows[0];
+
+    const newDeckResult = await pool.query(
+      `
+      INSERT INTO decks (user_id, title, description)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+      `,
+      [
+        originalDeck.user_id,
+        `${originalDeck.title} (Copy)`,
+        originalDeck.description
+      ]
+    );
+
+    const newDeck = newDeckResult.rows[0];
+
+    const cardsResult = await pool.query(
+      `SELECT * FROM flashcards WHERE deck_id = $1`,
+      [id]
+    );
+
+    for (const card of cardsResult.rows) {
+      await pool.query(
+        `
+        INSERT INTO flashcards (deck_id, front, back)
+        VALUES ($1, $2, $3)
+        `,
+        [newDeck.id, card.front, card.back]
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Deck duplicated successfully',
+      deck: newDeck
+    });
+  } catch (err) {
+    console.error('Duplicate deck error:', err);
+    res.status(500).json({ error: 'Failed to duplicate deck' });
+  }
+});
 
 //allows for express and server to wait for client requests on the selected port
 app.listen(port, () => {
