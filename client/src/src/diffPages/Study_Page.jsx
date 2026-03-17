@@ -1,37 +1,42 @@
 import React, { useState, useEffect } from "react";
+import { supabase } from "./supabase";
 
 export default function StudyPage() {
   const [flipped, setFlipped] = useState(false);
-  const [cards, setCards] = useState([
-    {
-      question: "What is the powerhouse of the cell?",
-      answer: "Mitochondria",
-    },
-    {
-      question: "What is DNA?",
-      answer: "Deoxyribonucleic acid",
-    },
-  ]);
+  const [cards, setCards] = useState([]);
   const [index, setIndex] = useState(0);
 
-  // BACKEND CONNECTION
+  // 🔹 Fetch from Supabase
+  async function fetchCards() {
+    const { data, error } = await supabase
+      .from("cards")
+      .select("*")
+      .order("id", { ascending: true });
+
+    if (error) {
+      console.log("Using fallback data");
+
+      // fallback (your original)
+      setCards([
+        {
+          question: "What is the powerhouse of the cell?",
+          answer: "Mitochondria",
+        },
+        {
+          question: "What is DNA?",
+          answer: "Deoxyribonucleic acid",
+        },
+      ]);
+    } else {
+      setCards(data);
+    }
+  }
+
   useEffect(() => {
-    fetch("/api/cards")
-      .then((res) => res.json())
-      .then((data) => setCards(data))
-      .catch(() => console.log("Using fallback data"));
+    fetchCards();
   }, []);
 
-  // STORE DECKS (commented for now)
-  /*
-  const saveDeck = async () => {
-    await fetch("/api/saveDeck", {
-      method: "POST",
-      body: JSON.stringify(cards),
-    });
-  };
-  */
-
+  // 🔹 Navigation
   const nextCard = () => {
     setFlipped(false);
     setIndex((prev) => (prev + 1) % cards.length);
@@ -44,6 +49,15 @@ export default function StudyPage() {
     );
   };
 
+  // 🔹 Delete (optional but useful)
+  async function handleDelete(id) {
+    await supabase.from("cards").delete().eq("id", id);
+    fetchCards();
+
+    // prevent index overflow
+    setIndex(0);
+  }
+
   return (
     <div className="w-full min-h-screen bg-white flex flex-col">
 
@@ -52,13 +66,6 @@ export default function StudyPage() {
         <h1 className="text-xl font-bold">StudyStrike</h1>
 
         <div className="flex gap-10 text-sm">
-          {/* NAVIGATION (commented for now) */}
-          {/*
-          <Link to="/">Home</Link>
-          <Link to="/study">Study</Link>
-          <Link to="/quiz">Quiz</Link>
-          <Link to="/leaderboard">Leaderboard</Link>
-          */}
           <span className="underline">Home</span>
           <span>Study</span>
           <span>Quiz</span>
@@ -71,9 +78,6 @@ export default function StudyPage() {
       {/* TITLE */}
       <div className="px-16 py-10">
         <h2 className="text-3xl font-bold">Deck Title</h2>
-        {/* <p className="text-gray-500 mt-2">
-          Here’s what people are saying
-        </p> */}
       </div>
 
       {/* FLASHCARD */}
@@ -92,14 +96,14 @@ export default function StudyPage() {
             {/* FRONT */}
             <div className="absolute w-full h-full bg-white shadow-lg rounded-2xl flex items-center justify-center p-6 backface-hidden">
               <h3 className="text-xl text-center">
-                {cards[index]?.question}
+                {cards[index]?.question || "Loading..."}
               </h3>
             </div>
 
             {/* BACK */}
             <div className="absolute w-full h-full bg-purple-100 shadow-lg rounded-2xl flex items-center justify-center p-6 rotate-y-180 backface-hidden">
               <h3 className="text-xl text-center">
-                {cards[index]?.answer}
+                {cards[index]?.answer || "Loading..."}
               </h3>
             </div>
           </div>
@@ -111,7 +115,7 @@ export default function StudyPage() {
         <div className="flex gap-4 items-center">
           <button onClick={prevCard}>{"<"}</button>
           <span>
-            {index + 1} / {cards.length}
+            {cards.length > 0 ? index + 1 : 0} / {cards.length}
           </span>
           <button onClick={nextCard}>{">"}</button>
         </div>
@@ -122,15 +126,25 @@ export default function StudyPage() {
         </button>
       </div>
 
-      {/* LIST */}
+      {/* LIST (NOW LIVE FROM SUPABASE) */}
       <div className="flex flex-col items-center mt-10 gap-4">
-        {cards.map((card, i) => (
+        {cards.map((card) => (
           <div
-            key={i}
-            className="w-[980px] p-6 shadow-md rounded-xl flex justify-between"
+            key={card.id}
+            className="w-[980px] p-6 shadow-md rounded-xl flex justify-between items-center"
           >
-            <span className="font-bold">{card.question}</span>
-            <span>{card.answer}</span>
+            <div>
+              <span className="font-bold">{card.question}</span>
+              <p>{card.answer}</p>
+            </div>
+
+            {/* 🔥 DELETE BUTTON */}
+            <button
+              onClick={() => handleDelete(card.id)}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg"
+            >
+              Delete
+            </button>
           </div>
         ))}
       </div>
