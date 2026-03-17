@@ -40,3 +40,15 @@
 .read-the-docs {
   color: #888;
 }
+
+.perspective {
+  perspective: 1000px;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
