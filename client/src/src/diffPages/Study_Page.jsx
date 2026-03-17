@@ -71,9 +71,9 @@ export default function StudyPage() {
       {/* TITLE */}
       <div className="px-16 py-10">
         <h2 className="text-3xl font-bold">Deck Title</h2>
-        <p className="text-gray-500 mt-2">
+        {/* <p className="text-gray-500 mt-2">
           Here’s what people are saying
-        </p>
+        </p> */}
       </div>
 
       {/* FLASHCARD */}
