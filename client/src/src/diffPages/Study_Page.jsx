@@ -1,3 +1,6 @@
+//comment: this integrates supabase, please edit with it to test it
+
+
 import React, { useState, useEffect } from "react";
 import { supabase } from "./supabase";
 
