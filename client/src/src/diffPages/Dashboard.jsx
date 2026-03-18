@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-// LATER
+// comment: LATER - the supabase integration is commented out for now
 // import React, { useState, useEffect } from "react";
 // import { supabase } from "../lib/supabase";
 
