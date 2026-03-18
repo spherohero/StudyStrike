@@ -6,7 +6,7 @@ export default function StudyPage() {
   const [cards, setCards] = useState([]);
   const [index, setIndex] = useState(0);
 
-  // 🔹 Fetch from Supabase
+  // Fetch from Supabase
   async function fetchCards() {
     const { data, error } = await supabase
       .from("cards")
@@ -36,7 +36,7 @@ export default function StudyPage() {
     fetchCards();
   }, []);
 
-  // 🔹 Navigation
+  // Navigation
   const nextCard = () => {
     setFlipped(false);
     setIndex((prev) => (prev + 1) % cards.length);
@@ -49,7 +49,7 @@ export default function StudyPage() {
     );
   };
 
-  // 🔹 Delete (optional but useful)
+  // Delete (optional but useful)
   async function handleDelete(id) {
     await supabase.from("cards").delete().eq("id", id);
     fetchCards();
@@ -138,7 +138,7 @@ export default function StudyPage() {
               <p>{card.answer}</p>
             </div>
 
-            {/* 🔥 DELETE BUTTON */}
+            {/* DELETE BUTTON */}
             <button
               onClick={() => handleDelete(card.id)}
               className="bg-red-500 text-white px-4 py-2 rounded-lg"
