@@ -1,81 +1,60 @@
-//comment: this integrates supabase, please edit with it to test it
-
-
 import React, { useState, useEffect } from "react";
-import { supabase } from "./supabase";
+import { Link } from "react-router-dom";
+// import { supabase } from "./supabase";  // Supabase import commented out
 
 export default function StudyPage() {
   const [flipped, setFlipped] = useState(false);
   const [cards, setCards] = useState([]);
   const [index, setIndex] = useState(0);
 
-  // Fetch from Supabase
-  async function fetchCards() {
-    const { data, error } = await supabase
-      .from("cards")
-      .select("*")
-      .order("id", { ascending: true });
-
-    if (error) {
-      console.log("Using fallback data");
-
-      // fallback (your original)
-      setCards([
-        {
-          question: "What is the powerhouse of the cell?",
-          answer: "Mitochondria",
-        },
-        {
-          question: "What is DNA?",
-          answer: "Deoxyribonucleic acid",
-        },
-      ]);
-    } else {
-      setCards(data);
-    }
-  }
-
+  // Initialize with dummy cards instead of Supabase
   useEffect(() => {
-    fetchCards();
+    setCards([
+      { id: 1, question: "What is the powerhouse of the cell?", answer: "Mitochondria" },
+      { id: 2, question: "What is DNA?", answer: "Deoxyribonucleic acid" },
+      { id: 3, question: "What planet is known as the Red Planet?", answer: "Mars" },
+    ]);
   }, []);
 
-  // Navigation
   const nextCard = () => {
     setFlipped(false);
-    setIndex((prev) => (prev + 1) % cards.length);
+    setIndex((prev) => (cards.length > 0 ? (prev + 1) % cards.length : 0));
   };
 
   const prevCard = () => {
     setFlipped(false);
     setIndex((prev) =>
-      prev === 0 ? cards.length - 1 : prev - 1
+      cards.length > 0 ? (prev === 0 ? cards.length - 1 : prev - 1) : 0
     );
   };
 
-  // Delete (optional but useful)
-  async function handleDelete(id) {
-    await supabase.from("cards").delete().eq("id", id);
-    fetchCards();
-
-    // prevent index overflow
+  const handleDelete = (id) => {
+    setCards(cards.filter((card) => card.id !== id));
     setIndex(0);
-  }
+  };
 
   return (
-    <div className="w-full min-h-screen bg-white flex flex-col">
-
+    <div className="w-full min-h-screen bg-white flex flex-col pb-40">
       {/* HEADER */}
       <div className="w-full h-16 shadow-md flex items-center justify-between px-6">
         <h1 className="text-xl font-bold">StudyStrike</h1>
 
         <div className="flex gap-10 text-sm">
-          <span className="underline">Home</span>
-          <span>Study</span>
-          <span>Quiz</span>
-          <span>Leaderboard</span>
+          <Link to="/" className="cursor-pointer underline">
+            Home
+          </Link>
+          <Link to="/study" className="cursor-pointer">
+            Study
+          </Link>
+          <Link to="/create" className="cursor-pointer">
+            Create
+          </Link>
+          <span className="cursor-pointer">Quiz</span>
+          <span className="cursor-pointer">Leaderboard</span>
         </div>
 
-        <div className="w-10 h-10 bg-purple-400 rounded-full"></div>
+        {/* <div className="w-10 h-10 bg-purple-400 rounded-full"></div> */}
+        <Link to="/login" className="w-10 h-10 bg-purple-400 rounded-full"></Link>
       </div>
 
       {/* TITLE */}
@@ -85,7 +64,6 @@ export default function StudyPage() {
 
       {/* FLASHCARD */}
       <div className="flex flex-col items-center gap-6">
-
         <div
           onClick={() => setFlipped(!flipped)}
           className="w-[656px] h-[406px] perspective cursor-pointer"
@@ -123,13 +101,13 @@ export default function StudyPage() {
           <button onClick={nextCard}>{">"}</button>
         </div>
 
-        {/* BUTTON */}
+        {/* QUIZ BUTTON */}
         <button className="bg-purple-400 text-white px-6 py-3 rounded-xl">
           Quiz Mode
         </button>
       </div>
 
-      {/* LIST (NOW LIVE FROM SUPABASE) */}
+      {/* CARD LIST */}
       <div className="flex flex-col items-center mt-10 gap-4">
         {cards.map((card) => (
           <div
@@ -141,13 +119,12 @@ export default function StudyPage() {
               <p>{card.answer}</p>
             </div>
 
-            {/* DELETE BUTTON */}
-            <button
+            {/* <button
               onClick={() => handleDelete(card.id)}
               className="bg-red-500 text-white px-4 py-2 rounded-lg"
             >
               Delete
-            </button>
+            </button> */}
           </div>
         ))}
       </div>
