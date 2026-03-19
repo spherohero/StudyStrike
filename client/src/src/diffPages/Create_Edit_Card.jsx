@@ -1,7 +1,6 @@
-//comment: this integrates supabase, please edit with it to test it
-
 import { useEffect, useState } from "react";
-import { supabase } from "./supabase";
+import { Link } from "react-router-dom";
+// import { supabase } from "./supabase";  // Supabase integration commented out
 
 export default function Create_Edit_Card() {
   const [cards, setCards] = useState([]);
@@ -9,48 +8,40 @@ export default function Create_Edit_Card() {
   const [answer, setAnswer] = useState("");
   const [editingId, setEditingId] = useState(null);
 
-  // 🔹 Fetch cards
-  async function fetchCards() {
-    const { data, error } = await supabase
-      .from("cards")
-      .select("*")
-      .order("id", { ascending: false });
-
-    if (!error) setCards(data);
-  }
-
+  // Initialize with dummy cards
   useEffect(() => {
-    fetchCards();
+    setCards([
+      { id: 1, question: "Example Question 1", answer: "Example Answer 1" },
+      { id: 2, question: "Example Question 2", answer: "Example Answer 2" },
+    ]);
   }, []);
 
-  // 🔹 Create or Update card
+  // Handle save/update locally
   async function handleSave() {
     if (!question || !answer) return;
 
     if (editingId) {
-      // UPDATE
-      await supabase
-        .from("cards")
-        .update({ question, answer })
-        .eq("id", editingId);
+      setCards(
+        cards.map((card) =>
+          card.id === editingId ? { id: editingId, question, answer } : card
+        )
+      );
     } else {
-      // CREATE
-      await supabase.from("cards").insert([{ question, answer }]);
+      const newId = cards.length ? Math.max(...cards.map((c) => c.id)) + 1 : 1;
+      setCards([...cards, { id: newId, question, answer }]);
     }
 
     setQuestion("");
     setAnswer("");
     setEditingId(null);
-    fetchCards();
   }
 
-  // 🔹 Delete
+  // Handle delete locally
   async function handleDelete(id) {
-    await supabase.from("cards").delete().eq("id", id);
-    fetchCards();
+    setCards(cards.filter((card) => card.id !== id));
   }
 
-  // 🔹 Load into form for editing
+  // Load card into form for editing
   function handleEdit(card) {
     setQuestion(card.question);
     setAnswer(card.answer);
@@ -59,15 +50,28 @@ export default function Create_Edit_Card() {
 
   return (
     <div className="flex flex-col items-center w-full p-10">
-
       {/* HEADER */}
-      <h1 className="text-3xl font-bold mb-6">
-        Create / edit a new deck
-      </h1>
+      <div className="w-full h-16 shadow-md flex items-center justify-between px-6 mb-10">
+        <h1 className="text-xl font-bold">StudyStrike</h1>
+
+        <div className="flex gap-10 text-sm">
+          <Link to="/" className="cursor-pointer underline">
+            Home
+          </Link>
+          <Link to="/study" className="cursor-pointer">
+            Study
+          </Link>
+          <Link to="/create" className="cursor-pointer">
+            Create
+          </Link>
+        </div>
+      </div>
+
+      {/* PAGE TITLE */}
+      <h1 className="text-3xl font-bold mb-6">Create / edit a new deck</h1>
 
       {/* FORM */}
       <div className="w-full max-w-3xl flex flex-col gap-4 mb-10">
-
         <input
           className="border p-4 rounded-xl"
           placeholder="Term / Question"
@@ -105,7 +109,6 @@ export default function Create_Edit_Card() {
 
       {/* CARD LIST */}
       <div className="w-full max-w-3xl flex flex-col gap-6">
-
         {cards.map((card) => (
           <div
             key={card.id}
@@ -133,7 +136,6 @@ export default function Create_Edit_Card() {
             </div>
           </div>
         ))}
-
       </div>
     </div>
   );
