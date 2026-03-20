@@ -1,5 +1,7 @@
 const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const app = express();  // creates new express app
 app.use(express.json());
 //default for localhost 3000
