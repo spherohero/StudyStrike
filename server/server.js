@@ -43,9 +43,20 @@ app.get('/tables', async (req, res) => {
 app.get('/init-db', async (req, res) => {
   try {
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        pw_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(10) NOT NULL CHECK (role IN ('TEACH', 'STUD')),
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS decks (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         title VARCHAR(255) NOT NULL,
         description TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
