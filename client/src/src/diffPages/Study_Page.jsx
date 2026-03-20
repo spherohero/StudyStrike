@@ -1,0 +1,132 @@
+import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+
+export default function StudyPage() {
+  const [flipped, setFlipped] = useState(false);
+  const [cards, setCards] = useState([]);
+  const [index, setIndex] = useState(0);
+
+  // Initialize with dummy cards 
+  useEffect(() => {
+    setCards([
+      { id: 1, question: "What is the powerhouse of the cell?", answer: "Mitochondria" },
+      { id: 2, question: "What is DNA?", answer: "Deoxyribonucleic acid" },
+      { id: 3, question: "What planet is known as the Red Planet?", answer: "Mars" },
+    ]);
+  }, []);
+
+  const nextCard = () => {
+    setFlipped(false);
+    setIndex((prev) => (cards.length > 0 ? (prev + 1) % cards.length : 0));
+  };
+
+  const prevCard = () => {
+    setFlipped(false);
+    setIndex((prev) =>
+      cards.length > 0 ? (prev === 0 ? cards.length - 1 : prev - 1) : 0
+    );
+  };
+
+  const handleDelete = (id) => {
+    setCards(cards.filter((card) => card.id !== id));
+    setIndex(0);
+  };
+
+  return (
+    <div className="w-full min-h-screen bg-white flex flex-col pb-40">
+      {/* HEADER */}
+      <div className="w-full h-16 shadow-md flex items-center justify-between px-6">
+        <h1 className="text-xl font-bold">StudyStrike</h1>
+
+        <div className="flex gap-10 text-sm">
+          <Link to="/" className="cursor-pointer underline">
+            Home
+          </Link>
+          <Link to="/study" className="cursor-pointer">
+            Study
+          </Link>
+          <Link to="/create" className="cursor-pointer">
+            Create
+          </Link>
+          <span className="cursor-pointer">Quiz</span>
+          <span className="cursor-pointer">Leaderboard</span>
+        </div>
+
+        {/* <div className="w-10 h-10 bg-purple-400 rounded-full"></div> */}
+        <Link to="/login" className="w-10 h-10 bg-purple-400 rounded-full"></Link>
+      </div>
+
+      {/* TITLE */}
+      <div className="px-16 py-10">
+        <h2 className="text-3xl font-bold">Deck Title</h2>
+      </div>
+
+      {/* FLASHCARD */}
+      <div className="flex flex-col items-center gap-6">
+        <div
+          onClick={() => setFlipped(!flipped)}
+          className="w-[656px] h-[406px] perspective cursor-pointer"
+        >
+          <div
+            className={`relative w-full h-full transition-transform duration-500 ${
+              flipped ? "rotate-y-180" : ""
+            }`}
+            style={{ transformStyle: "preserve-3d" }}
+          >
+            {/* FRONT */}
+            <div className="absolute w-full h-full bg-white shadow-lg rounded-2xl flex items-center justify-center p-6 backface-hidden">
+              <h3 className="text-xl text-center">
+                {cards[index]?.question || "Loading..."}
+              </h3>
+            </div>
+
+            {/* BACK */}
+            <div className="absolute w-full h-full bg-purple-100 shadow-lg rounded-2xl flex items-center justify-center p-6 rotate-y-180 backface-hidden">
+              <h3 className="text-xl text-center">
+                {cards[index]?.answer || "Loading..."}
+              </h3>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-sm">Click to flip</p>
+
+        {/* NAV */}
+        <div className="flex gap-4 items-center">
+          <button onClick={prevCard}>{"<"}</button>
+          <span>
+            {cards.length > 0 ? index + 1 : 0} / {cards.length}
+          </span>
+          <button onClick={nextCard}>{">"}</button>
+        </div>
+
+        {/* QUIZ BUTTON */}
+        <button className="bg-purple-400 text-white px-6 py-3 rounded-xl">
+          Quiz Mode
+        </button>
+      </div>
+
+      {/* CARD LIST */}
+      <div className="flex flex-col items-center mt-10 gap-4">
+        {cards.map((card) => (
+          <div
+            key={card.id}
+            className="w-[980px] p-6 shadow-md rounded-xl flex justify-between items-center"
+          >
+            <div>
+              <span className="font-bold">{card.question}</span>
+              <p>{card.answer}</p>
+            </div>
+
+            {/* <button
+              onClick={() => handleDelete(card.id)}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg"
+            >
+              Delete
+            </button> */}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
