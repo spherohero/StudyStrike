@@ -183,7 +183,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// user profile info
+// user profile info, GET
 app.get('/me', authenticateToken, async (req, res) => {
   try {
     // DONT SEND PASSWORD
