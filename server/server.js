@@ -106,6 +106,97 @@ app.get('/columns/:table', async (req, res) => {
 });
 
 
+// user authentication
+const JWT_SECRET = process.env.JWT_SECRET;
+
+const authenticateToken = (req, res, next) => {
+  // grab header and the split it to only get the second part (token stored)
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  // no token
+  if (!token) {
+    return res.status(401).json({ error: 'Access denied' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    // fail verification token
+    if (err) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+//signups
+app.post('/register', async (req, res) => {
+  try {
+    // VARIABLE FOR FRONT END
+    const { email, password, role, name } = req.body;
+    if (!email || !password || !role) {
+      return res.status(400).json({ error: 'Email, password, and role are required' });
+    }
+    
+    // hash the password using bcrypt
+    const strength = await bcrypt.genSalt(10);
+    const pw_hash = await bcrypt.hash(password, strength);
+
+    const result = await pool.query(
+      `INSERT INTO users (email, pw_hash, role, name) VALUES ($1, $2, $3, $4) RETURNING id, email, role, name`,
+      [email, pw_hash, role, name || '']
+    );
+
+    res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') { // 23505 is postgres UNIQUE fail
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+    // default fail
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
+});
+
+// login to already created act
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [email]);
+    if (result.rows.length === 0) { // no account found
+      return res.status(401).json({ error: 'Incorrect Email or Password'});
+    }
+    // row 0 keeps the user data found
+    const user = result.rows[0];
+    // entered password vs hashed password
+    const validPassword = await bcrypt.compare(password, user.pw_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Incorrect Email or Password'});
+    }
+    // create jwt token by signing it, 24hr expiry
+    const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+  } catch (err) {
+    // default fail
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+// user profile info
+app.get('/me', authenticateToken, async (req, res) => {
+  try {
+    // DONT SEND PASSWORD
+    const result = await pool.query(`SELECT id, email, role, name, created_at FROM users WHERE id = $1`, [req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    // profile not found but with valid json token
+    console.error('User profile error:', err);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
 app.post('/decks', async (req, res) => {
   try {
     const { user_id, title, description } = req.body;
