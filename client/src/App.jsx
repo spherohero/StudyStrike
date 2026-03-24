@@ -1,21 +1,13 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-import Login from "./src/diffPages/Login.jsx";
-import Home from "./src/diffPages/Home_Page.jsx";
-import Dashboard from "./src/diffPages/Dashboard.jsx";
-import Study from "./src/diffPages/Study_Page.jsx";
-import Create from "./src/diffPages/Create_Edit_Card.jsx";
-
+import {BrowserRouter,Routes, Route}from'react-router-dom'
+import Login from'./src/diffPages/Login'
+import Home from'./src/diffPages/Home'
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/study" element={<Study />} />
-        <Route path="/create" element={<Create />} />
-      </Routes>
+    <Routes>
+    <Route path="/"element={<Login />}/>
+    <Route path="/home" element={<Home />}/>
+    </Routes>
     </BrowserRouter>
-  );
+  )
 }
