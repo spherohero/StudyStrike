@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
 const bcrypt = require('bcryptjs');
@@ -176,11 +177,10 @@ app.post('/api/login', async (req, res) => {
     // create jwt token by signing it, 24hr expiry
     const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
     res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
-  } catch (err) {
-    // default fail
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Failed to login' });
-  }
+    } catch (err) {
+      console.error('Login error FULL:', err.message, err.stack);
+      res.status(500).json({ error: 'Failed to login' });
+    }
 });
 
 // user profile info, GET
