@@ -27,9 +27,8 @@ export default function HomePage() {
              Dashboard
             </Link>
           <span className="cursor-pointer">Quiz</span>
-          <span className="cursor-pointer">Leaderboard</span>
+          <Link to="/leaderboard" className="cursor-pointer">Leaderboard</Link>
         </nav>
-
         <div className="w-10 h-10 rounded-full bg-[#9D6381]" />
       </header>
 
