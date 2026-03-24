@@ -162,19 +162,33 @@ export default function Create_Edit_Card() {
 
         {/* FORM */}
         <div className="w-full max-w-3xl flex flex-col gap-4 mb-10">
-          <input
-            className="border rounded-xl px-4 py-3 text-sm outline-none focus:border-[#9D6381]"
-            placeholder="Term / Question"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-          />
-          <input
-            className="border rounded-xl px-4 py-3 text-sm outline-none focus:border-[#9D6381]"
-            placeholder="Definition / Answer"
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSave()}
-          />
+          <div className="flex flex-col gap-1">
+            <textarea
+              className="border rounded-xl px-4 py-3 text-sm outline-none focus:border-[#9D6381] resize-none"
+              placeholder="Term / Question"
+              value={question}
+              maxLength={300}
+              rows={2}
+              onChange={(e) => setQuestion(e.target.value)}
+            />
+            <span className={`text-xs self-end ${question.length >= 280 ? "text-red-400" : "text-gray-300"}`}>
+              {question.length}/300
+            </span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <textarea
+              className="border rounded-xl px-4 py-3 text-sm outline-none focus:border-[#9D6381] resize-none"
+              placeholder="Definition / Answer"
+              value={answer}
+              maxLength={300}
+              rows={2}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSave()}
+            />
+            <span className={`text-xs self-end ${answer.length >= 280 ? "text-red-400" : "text-gray-300"}`}>
+              {answer.length}/300
+            </span>
+          </div>
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
