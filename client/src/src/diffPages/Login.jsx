@@ -14,8 +14,20 @@ export default function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  function isValidEmail(val) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val.trim());
+  }
+
   async function handleSubmit() {
     if (!email || !password) return;
+    if (!isValidEmail(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
     setError("");
     setLoading(true);
 
@@ -75,9 +87,17 @@ export default function Login() {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-4 py-3 mb-4 text-sm outline-none focus:border-[#9D6381]"
+          onChange={(e) => { setEmail(e.target.value); setError(""); }}
+          className={`w-full border rounded-lg px-4 py-3 mb-1 text-sm outline-none transition ${
+            email && !isValidEmail(email)
+              ? "border-red-400 focus:border-red-400"
+              : "border-gray-200 focus:border-[#9D6381]"
+          }`}
         />
+        {email && !isValidEmail(email) && (
+          <p className="text-red-400 text-xs mb-3">Enter a valid email (e.g. name@example.com)</p>
+        )}
+        {(!email || isValidEmail(email)) && <div className="mb-3" />}
         <input
           type="password"
           placeholder="Password"
