@@ -10,7 +10,7 @@ const port = 3000;
 // change the path to check the database, instantly return "request obj and response obj"
 // request object is stuff like ip addr, http method
 // response obj is what goes to client
-app.get('/db-test', async (req, res) => {
+app.get('/api/db-test', async (req, res) => {
   try { // try catch
     // postgres prompted to return current time as result in UTC
     const result = await pool.query('SELECT NOW()'); 
@@ -26,7 +26,7 @@ app.get('/db-test', async (req, res) => {
   }
 });
 
-app.get('/tables', async (req, res) => {
+app.get('/api/tables', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT table_name
@@ -42,7 +42,7 @@ app.get('/tables', async (req, res) => {
   }
 });
 
-app.get('/init-db', async (req, res) => {
+app.get('/api/init-db', async (req, res) => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -84,7 +84,7 @@ app.get('/init-db', async (req, res) => {
   }
 });
 
-app.get('/columns/:table', async (req, res) => {
+app.get('/api/columns/:table', async (req, res) => {
   try {
     const { table } = req.params;
 
@@ -130,7 +130,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 //signups
-app.post('/register', async (req, res) => {
+app.post('/api/register', async (req, res) => {
   try {
     // VARIABLE FOR FRONT END
     const { email, password, role, name } = req.body;
@@ -159,7 +159,7 @@ app.post('/register', async (req, res) => {
 });
 
 // login to already created act
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [email]);
@@ -184,7 +184,7 @@ app.post('/login', async (req, res) => {
 });
 
 // user profile info, GET
-app.get('/me', authenticateToken, async (req, res) => {
+app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     // DONT SEND PASSWORD
     const result = await pool.query(`SELECT id, email, role, name, created_at FROM users WHERE id = $1`, [req.user.id]);
@@ -197,7 +197,7 @@ app.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/decks', async (req, res) => {
+app.post('/api/decks', async (req, res) => {
   try {
     const { user_id, title, description } = req.body;
 
@@ -221,7 +221,7 @@ app.post('/decks', async (req, res) => {
   }
 });
 
-app.get('/decks', async (req, res) => {
+app.get('/api/decks', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT * FROM decks ORDER BY id ASC`
@@ -234,7 +234,7 @@ app.get('/decks', async (req, res) => {
   }
 });
 
-app.post('/decks/:deckId/cards', async (req, res) => {
+app.post('/api/decks/:deckId/cards', async (req, res) => {
   try {
     const { deckId } = req.params;
     const { front, back } = req.body;
@@ -268,7 +268,7 @@ app.post('/decks/:deckId/cards', async (req, res) => {
   }
 });
 
-app.get('/decks/:deckId/cards', async (req, res) => {
+app.get('/api/decks/:deckId/cards', async (req, res) => {
   try {
     const { deckId } = req.params;
 
@@ -284,7 +284,7 @@ app.get('/decks/:deckId/cards', async (req, res) => {
   }
 });
 
-app.patch('/cards/:cardId', async (req, res) => {
+app.patch('/api/cards/:cardId', async (req, res) => {
   try {
     const { cardId } = req.params;
     const { front, back } = req.body;
@@ -321,7 +321,7 @@ app.patch('/cards/:cardId', async (req, res) => {
 });
 
 
-app.delete('/cards/:cardId', async (req, res) => {
+app.delete('/api/cards/:cardId', async (req, res) => {
   try {
     const { cardId } = req.params;
 
@@ -349,7 +349,7 @@ app.delete('/cards/:cardId', async (req, res) => {
   }
 });
 
-app.post('/decks/:id/duplicate', async (req, res) => {
+app.post('/api/decks/:id/duplicate', async (req, res) => {
   try {
     const { id } = req.params;
 
