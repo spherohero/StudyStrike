@@ -128,23 +128,33 @@ export default function StudyPage() {
           >
             {/* FRONT */}
             <div
-              className="absolute inset-0 bg-white shadow-xl rounded-2xl flex flex-col items-center justify-center p-8"
+              className="absolute inset-0 bg-white shadow-xl rounded-2xl flex flex-col items-center justify-center p-8 overflow-hidden"
               style={{ backfaceVisibility: "hidden" }}
             >
-              <span className="text-xs uppercase tracking-widest text-gray-300 mb-4">Term</span>
-              <h3 className="text-2xl text-center font-medium">{card.front}</h3>
+              <span className="text-xs uppercase tracking-widest text-gray-300 mb-4 shrink-0">Term</span>
+              <p
+                className="text-center font-medium overflow-y-auto max-h-[280px] w-full"
+                style={{ fontSize: card.front.length > 150 ? "0.95rem" : card.front.length > 80 ? "1.2rem" : "1.5rem", lineHeight: "1.5" }}
+              >
+                {card.front}
+              </p>
             </div>
 
             {/* BACK */}
             <div
-              className="absolute inset-0 bg-purple-50 shadow-xl rounded-2xl flex flex-col items-center justify-center p-8"
+              className="absolute inset-0 bg-purple-50 shadow-xl rounded-2xl flex flex-col items-center justify-center p-8 overflow-hidden"
               style={{
                 backfaceVisibility: "hidden",
                 transform: "rotateY(180deg)",
               }}
             >
-              <span className="text-xs uppercase tracking-widest text-purple-300 mb-4">Definition</span>
-              <h3 className="text-2xl text-center font-medium">{card.back}</h3>
+              <span className="text-xs uppercase tracking-widest text-purple-300 mb-4 shrink-0">Definition</span>
+              <p
+                className="text-center font-medium overflow-y-auto max-h-[280px] w-full"
+                style={{ fontSize: card.back.length > 150 ? "0.95rem" : card.back.length > 80 ? "1.2rem" : "1.5rem", lineHeight: "1.5" }}
+              >
+                {card.back}
+              </p>
             </div>
           </div>
         </div>
