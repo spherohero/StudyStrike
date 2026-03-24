@@ -115,10 +115,18 @@ export default function Dashboard() {
   }
 
   async function handleDelete(deckId) {
+    // working now
     if (!confirm("Delete this deck and all its cards?")) return;
-    // Optimistic remove
-    setDecks(decks.filter((d) => d.id !== deckId));
-    // NOTE: backend DELETE /api/decks/:id not yet implemented — optimistic only
+    try {
+      const res = await fetch(`/api/decks/${deckId}`, { method: "DELETE" });
+      if (res.ok) {
+        setDecks(decks.filter((d) => d.id !== deckId));
+      } else {
+        console.error("Failed to delete the deck on the server.");
+      }
+    } catch (err) {
+      console.error("Network error deleting deck:", err);
+    }
   }
 
   async function handleDuplicate(deckId) {
