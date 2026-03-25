@@ -62,9 +62,15 @@ app.get('/api/init-db', async (req, res) => {
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         title VARCHAR(255) NOT NULL,
         description TEXT DEFAULT '',
+        status VARCHAR(20) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // if table already exists
+    await pool.query(`
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
     `);
 
     await pool.query(`
@@ -224,13 +230,42 @@ app.post('/api/decks', async (req, res) => {
 app.get('/api/decks', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM decks ORDER BY id ASC`
+      `SELECT * FROM decks WHERE status = 'active' ORDER BY id ASC`
     );
 
     res.json(result.rows);
   } catch (err) {
     console.error('Get decks error:', err);
     res.status(500).json({ error: 'Failed to fetch decks' });
+  }
+});
+//delete function for decks (so now it matches card deletion)
+app.delete('/api/decks/:deckId', async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    const result = await pool.query(
+      `
+      UPDATE decks 
+      SET status = 'deleted', updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $1 
+      RETURNING *;
+      `,
+      [deckId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Deck soft-deleted successfully',
+      deck: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Delete deck error:', err);
+    res.status(500).json({ error: 'Failed to delete deck' });
   }
 });
 
