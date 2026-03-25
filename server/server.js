@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
 const bcrypt = require('bcryptjs');
@@ -61,9 +62,15 @@ app.get('/api/init-db', async (req, res) => {
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         title VARCHAR(255) NOT NULL,
         description TEXT DEFAULT '',
+        status VARCHAR(20) DEFAULT 'active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+
+    // if table already exists
+    await pool.query(`
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
     `);
 
     await pool.query(`
@@ -176,11 +183,10 @@ app.post('/api/login', async (req, res) => {
     // create jwt token by signing it, 24hr expiry
     const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
     res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
-  } catch (err) {
-    // default fail
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'Failed to login' });
-  }
+    } catch (err) {
+      console.error('Login error FULL:', err.message, err.stack);
+      res.status(500).json({ error: 'Failed to login' });
+    }
 });
 
 // user profile info, GET
@@ -224,13 +230,83 @@ app.post('/api/decks', async (req, res) => {
 app.get('/api/decks', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM decks ORDER BY id ASC`
+      `SELECT * FROM decks WHERE status = 'active' ORDER BY id ASC`
     );
 
     res.json(result.rows);
   } catch (err) {
     console.error('Get decks error:', err);
     res.status(500).json({ error: 'Failed to fetch decks' });
+  }
+});
+
+//delete function for decks (so now it matches card deletion)
+app.delete('/api/decks/:deckId', async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    const result = await pool.query(
+      `
+      UPDATE decks 
+      SET status = 'deleted', updated_at = CURRENT_TIMESTAMP 
+      WHERE id = $1 
+      RETURNING *;
+      `,
+      [deckId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Deck soft-deleted successfully',
+      deck: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Delete deck error:', err);
+    res.status(500).json({ error: 'Failed to delete deck' });
+  }
+});
+
+// rename deck title and/or description
+app.patch('/api/decks/:deckId', async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const { title, description } = req.body;
+
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1 AND status = 'active'`,
+      [deckId]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    const existing = deckResult.rows[0];
+    const updatedTitle = title ?? existing.title;
+    const updatedDescription = description ?? existing.description;
+
+    if (!updatedTitle.trim()) {
+      return res.status(400).json({ error: 'Title cannot be empty' });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE decks
+      SET title = $1, description = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *;
+      `,
+      [updatedTitle, updatedDescription, deckId]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Edit deck error:', err);
+    res.status(500).json({ error: 'Failed to edit deck' });
   }
 });
 
@@ -402,52 +478,6 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
   } catch (err) {
     console.error('Duplicate deck error:', err);
     res.status(500).json({ error: 'Failed to duplicate deck' });
-  }
-});
-
-app.patch('/api/decks/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, description } = req.body;
-
-    const deckResult = await pool.query(`SELECT * FROM decks WHERE id = $1`, [id]);
-    if (deckResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Deck not found' });
-    }
-
-    const existing = deckResult.rows[0];
-    const updatedTitle = title ?? existing.title;
-    const updatedDescription = description ?? existing.description;
-
-    if (!updatedTitle.trim()) {
-      return res.status(400).json({ error: 'Title cannot be empty' });
-    }
-
-    const result = await pool.query(
-      `UPDATE decks SET title = $1, description = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *`,
-      [updatedTitle, updatedDescription, id]
-    );
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Edit deck error:', err);
-    res.status(500).json({ error: 'Failed to edit deck' });
-  }
-});
-
-app.delete('/api/decks/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query(`DELETE FROM decks WHERE id = $1 RETURNING *`, [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Deck not found' });
-    }
-
-    res.json({ success: true, message: 'Deck deleted successfully', deletedDeck: result.rows[0] });
-  } catch (err) {
-    console.error('Delete deck error:', err);
-    res.status(500).json({ error: 'Failed to delete deck' });
   }
 });
 
