@@ -239,6 +239,7 @@ app.get('/api/decks', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch decks' });
   }
 });
+
 //delete function for decks (so now it matches card deletion)
 app.delete('/api/decks/:deckId', async (req, res) => {
   try {
@@ -266,6 +267,46 @@ app.delete('/api/decks/:deckId', async (req, res) => {
   } catch (err) {
     console.error('Delete deck error:', err);
     res.status(500).json({ error: 'Failed to delete deck' });
+  }
+});
+
+// rename deck title and/or description
+app.patch('/api/decks/:deckId', async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const { title, description } = req.body;
+
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1 AND status = 'active'`,
+      [deckId]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    const existing = deckResult.rows[0];
+    const updatedTitle = title ?? existing.title;
+    const updatedDescription = description ?? existing.description;
+
+    if (!updatedTitle.trim()) {
+      return res.status(400).json({ error: 'Title cannot be empty' });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE decks
+      SET title = $1, description = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *;
+      `,
+      [updatedTitle, updatedDescription, deckId]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Edit deck error:', err);
+    res.status(500).json({ error: 'Failed to edit deck' });
   }
 });
 
