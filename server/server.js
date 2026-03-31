@@ -83,6 +83,41 @@ app.get('/api/init-db', async (req, res) => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    await pool.query(`
+  CREATE TABLE IF NOT EXISTS quizzes (
+    id SERIAL PRIMARY KEY,
+    deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS quiz_questions (
+    id SERIAL PRIMARY KEY,
+    quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    option_a TEXT NOT NULL,
+    option_b TEXT NOT NULL,
+    option_c TEXT NOT NULL,
+    option_d TEXT NOT NULL,
+    correct_option CHAR(1) NOT NULL CHECK (correct_option IN ('A', 'B', 'C', 'D')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS quiz_attempts (
+    id SERIAL PRIMARY KEY,
+    quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    score INTEGER NOT NULL,
+    total_questions INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 
     res.json({ success: true, message: 'Database tables created successfully.' });
   } catch (err) {
@@ -478,6 +513,223 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
   } catch (err) {
     console.error('Duplicate deck error:', err);
     res.status(500).json({ error: 'Failed to duplicate deck' });
+  }
+});
+
+// create quiz
+app.post('/api/quizzes', authenticateToken, async (req, res) => {
+  try {
+    const { deck_id, title, description } = req.body;
+
+    if (!deck_id || !title) {
+      return res.status(400).json({ error: 'deck_id and title are required' });
+    }
+    //user_id check here for ownership
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1 AND status = 'active' AND user_id = $2`,
+      [deck_id, req.user.id]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found or not owned' });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO quizzes (deck_id, title, description)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+      `,
+      [deck_id, title, description || '']
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create quiz error:', err);
+    res.status(500).json({ error: 'Failed to create quiz' });
+  }
+});
+
+// add question to quiz
+app.post('/api/quizzes/:quizId/questions', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { question, option_a, option_b, option_c, option_d, correct_option } = req.body;
+
+    if (!question || !option_a || !option_b || !option_c || !option_d || !correct_option) {
+      return res.status(400).json({ error: 'All question fields are required' });
+    }
+
+    const validOptions = ['A', 'B', 'C', 'D'];
+    if (!validOptions.includes(correct_option)) {
+      return res.status(400).json({ error: 'correct_option must be A, B, C, or D' });
+    }
+    // fix: JOIN decks verify ownership
+    const quizResult = await pool.query(
+      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      [quizId, req.user.id]
+    );
+
+    if (quizResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Quiz not found or not owned' });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO quiz_questions
+      (quiz_id, question, option_a, option_b, option_c, option_d, correct_option)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *;
+      `,
+      [quizId, question, option_a, option_b, option_c, option_d, correct_option]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Add quiz question error:', err);
+    res.status(500).json({ error: 'Failed to add quiz question' });
+  }
+});
+// get all quizzes for one deck
+app.get('/api/decks/:deckId/quizzes', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    // fix: check ownership before returning
+    const deckResult = await pool.query(
+      `SELECT id FROM decks WHERE id = $1 AND user_id = $2`,
+      [deckId, req.user.id]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Deck not owned' });
+    }
+
+
+    const result = await pool.query(
+      `SELECT * FROM quizzes WHERE deck_id = $1 ORDER BY id ASC`,
+      [deckId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get quizzes error:', err);
+    res.status(500).json({ error: 'Failed to fetch quizzes' });
+  }
+});
+
+// get one quiz with questions, withholds correct answers
+app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+
+    //fix: join decks again
+    const quizResult = await pool.query(
+      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      [quizId, req.user.id]
+    );
+
+    if (quizResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Quiz not found' });
+    }
+
+    const questionsResult = await pool.query(
+      `
+      SELECT id, question, option_a, option_b, option_c, option_d
+      FROM quiz_questions
+      WHERE quiz_id = $1
+      ORDER BY id ASC
+      `,
+      [quizId]
+    );
+
+    res.json({
+      quiz: quizResult.rows[0],
+      questions: questionsResult.rows
+    });
+  } catch (err) {
+    console.error('Get quiz error:', err);
+    res.status(500).json({ error: 'Failed to fetch quiz' });
+  }
+});
+
+// submitting quiz route
+app.post('/api/quizzes/:quizId/submit', authenticateToken, async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { answers } = req.body;
+
+    if (!answers || !Array.isArray(answers)) {
+      return res.status(400).json({ error: 'answers array is required' });
+    }
+
+    const questionsResult = await pool.query(
+      `
+      SELECT id, correct_option
+      FROM quiz_questions
+      WHERE quiz_id = $1
+      ORDER BY id ASC
+      `,
+      [quizId]
+    );
+
+    if (questionsResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No questions found for this quiz' });
+    }
+
+    let score = 0;
+
+    for (const question of questionsResult.rows) {
+      const submittedAnswer = answers.find(
+        (a) => Number(a.question_id) === question.id
+      );
+
+      if (submittedAnswer && submittedAnswer.selected_option === question.correct_option) {
+        score++;
+      }
+    }
+
+    const total_questions = questionsResult.rows.length;
+
+    const attemptResult = await pool.query(
+      `
+      INSERT INTO quiz_attempts (quiz_id, user_id, score, total_questions)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *;
+      `,
+      [quizId, req.user.id, score, total_questions]
+    );
+
+    res.json({
+      message: 'Quiz submitted successfully',
+      score,
+      total_questions,
+      attempt: attemptResult.rows[0]
+    });
+  } catch (err) {
+    console.error('Submit quiz error:', err);
+    res.status(500).json({ error: 'Failed to submit quiz' });
+  }
+});
+
+// user's logged in quiz attempt history
+app.get('/api/my-quiz-attempts', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT qa.*, q.title AS quiz_title
+      FROM quiz_attempts qa
+      JOIN quizzes q ON qa.quiz_id = q.id
+      WHERE qa.user_id = $1
+      ORDER BY qa.created_at DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get quiz attempts error:', err);
+    res.status(500).json({ error: 'Failed to fetch quiz attempts' });
   }
 });
 
