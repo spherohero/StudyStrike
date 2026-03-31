@@ -483,14 +483,14 @@ app.post('/api/quizzes', authenticateToken, async (req, res) => {
     if (!deck_id || !title) {
       return res.status(400).json({ error: 'deck_id and title are required' });
     }
-
+    //user_id check here for ownership
     const deckResult = await pool.query(
-      `SELECT * FROM decks WHERE id = $1 AND status = 'active'`,
-      [deck_id]
+      `SELECT * FROM decks WHERE id = $1 AND status = 'active' AND user_id = $2`,
+      [deck_id, req.user.id]
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Deck not found' });
+      return res.status(404).json({ error: 'Deck not found or not owned' });
     }
 
     const result = await pool.query(
@@ -523,14 +523,14 @@ app.post('/api/quizzes/:quizId/questions', authenticateToken, async (req, res) =
     if (!validOptions.includes(correct_option)) {
       return res.status(400).json({ error: 'correct_option must be A, B, C, or D' });
     }
-
+    // fix: JOIN decks verify ownership
     const quizResult = await pool.query(
-      `SELECT * FROM quizzes WHERE id = $1`,
-      [quizId]
+      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found' });
+      return res.status(404).json({ error: 'Quiz not found or not owned' });
     }
 
     const result = await pool.query(
@@ -554,6 +554,17 @@ app.get('/api/decks/:deckId/quizzes', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
 
+    // fix: check ownership before returning
+    const deckResult = await pool.query(
+      `SELECT id FROM decks WHERE id = $1 AND user_id = $2`,
+      [deckId, req.user.id]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Deck not owned' });
+    }
+
+
     const result = await pool.query(
       `SELECT * FROM quizzes WHERE deck_id = $1 ORDER BY id ASC`,
       [deckId]
@@ -571,9 +582,10 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params;
 
+    //fix: join decks again
     const quizResult = await pool.query(
-      `SELECT * FROM quizzes WHERE id = $1`,
-      [quizId]
+      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
