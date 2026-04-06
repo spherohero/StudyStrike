@@ -460,6 +460,68 @@ app.delete('/api/cards/:cardId', async (req, res) => {
   }
 });
 
+app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const { cards } = req.body;
+    // imported array
+    if (!cards || !Array.isArray(cards)) {
+      return res.status(400).json({ 
+        error: 'cards array is required' 
+      });
+    }
+
+    // check ownership to not delete other users decks during import
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1 AND user_id = $2`,
+      [deckId, req.user.id]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'Deck not found or not owned' 
+      });
+    }
+
+    await pool.query('BEGIN');
+
+    // delete existing cards
+    await pool.query(
+      `DELETE FROM flashcards WHERE deck_id = $1`,
+      [deckId]
+    );
+
+    // insert new ones
+    for (const card of cards) {
+      if (!card.front || !card.back) {
+        throw new Error('Invalid card payload. Missing term or definition.');
+      }
+      await pool.query(
+        `
+        INSERT INTO flashcards (deck_id, front, back)
+        VALUES ($1, $2, $3)
+        `,
+        [deckId, card.front, card.back]
+      );
+    }
+    
+    // update deck timestamp
+    await pool.query(
+      `UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [deckId]
+    );
+    await pool.query('COMMIT');
+
+    res.json({ success: true, message: 'Deck imported successfully' });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Import deck error:', err);
+    res.status(500).json({ 
+      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck' 
+    });
+  }
+});
+
 app.post('/api/decks/:id/duplicate', async (req, res) => {
   try {
     const { id } = req.params;
