@@ -6,30 +6,18 @@ export const Authenticator = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // now loading, fetch
+  // now loading, fetch user data from cookie 
   useEffect(() => {
     const fetchProfile = async () => {
-      const AuthToken = localStorage.getItem('token');
-      // attempt to grab if previosuly saved, else break as logged out
-      if (!AuthToken) {
-        setLoading(false);
-        return;
-      }
-
       try {
-        // http call using the bearer token (very similar to postman testing)
-        const response = await fetch('/api/me', {
-          headers: {
-            'Authorization': `Bearer ${AuthToken}`
-          }
-        }
-      );
+        // http call automatically sends cookie to /api/me
+        const response = await fetch('/api/me');
         if (response.ok) {
           const userData = await response.json();
           setUser(userData); // save login state for user
         } else {
-          // post 24hrs? or wrong token altogether
-          localStorage.removeItem('token');
+          // not logged in
+          setUser(null);
         }
       } catch (error) {
         // *shrug* fail
@@ -59,8 +47,6 @@ export const Authenticator = ({ children }) => {
       const data = await response.json();
 
       if (response.ok) {
-        // only save the user token from before
-        localStorage.setItem('token', data.token); 
         // token saved -> user logged in
         setUser(data.user);
         return { 
@@ -114,9 +100,13 @@ export const Authenticator = ({ children }) => {
     }
   };
 
-  // logout user and remove stored token
-  const logout = () => {
-    localStorage.removeItem('token');
+  // logout user and ask to clear cookie
+  const logout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch (err) {
+      console.error("Logout API Error:", err);
+    }
     setUser(null);
   };
 

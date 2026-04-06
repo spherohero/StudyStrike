@@ -27,20 +27,12 @@ export const importCardsFromCSV = async (file, deckId) => {
               // only use cards with front/back, or else throw error in server.js
           }).filter(card => card.front && card.back); 
 
-          const token = localStorage.getItem('token');
-          if (!token) {
-            return resolve({
-              success: false,
-              error: 'User is not authenticated' 
-            });
-          }
-
           // call new endpoint route in server.js to import cards
+          // no need for header, cookie is persistent
           const response = await fetch(`/api/decks/${deckId}/import`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
+              'Content-Type': 'application/json'
             },
             body: JSON.stringify({ cards })
           });

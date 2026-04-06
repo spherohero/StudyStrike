@@ -3,8 +3,11 @@ const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+// now using cookies instead of local storage bcs discussion on friday extremely unsecure
+const cookieParser = require('cookie-parser');
 const app = express();  // creates new express app
 app.use(express.json());
+app.use(cookieParser());
 //default for localhost 3000
 const port = 3000;
 
@@ -152,9 +155,9 @@ app.get('/api/columns/:table', async (req, res) => {
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const authenticateToken = (req, res, next) => {
-  // grab header and the split it to only get the second part (token stored)
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  // get token securely from cookie
+  // used instead of header as cookie sent over http
+  const token = req.cookies.token;
   
   // no token
   if (!token) {
@@ -217,11 +220,30 @@ app.post('/api/login', async (req, res) => {
     }
     // create jwt token by signing it, 24hr expiry
     const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ message: 'Login successful', token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+    
+    // token now rests in http cookie
+    res.cookie('token', token, { 
+      httpOnly: true, 
+      // uses the secure flag http(S) if hosting it normally (not on localhost)
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours cookie lifetime
+      // cookie setting to prevent CSRF
+      // https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+      sameSite: 'lax'
+    });
+
+    // dont need to include token in response, lives in cookie
+    res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role, name: user.name } });
     } catch (err) {
       console.error('Login error FULL:', err.message, err.stack);
       res.status(500).json({ error: 'Failed to login' });
     }
+});
+
+// logout to destroy cookie
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'Logout successful' });
 });
 
 // user profile info, GET

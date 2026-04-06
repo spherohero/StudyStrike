@@ -76,8 +76,6 @@ export default function Dashboard() {
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const token = localStorage.getItem("token");
-
   useEffect(() => {
     fetchDecks();
   }, []);
