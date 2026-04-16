@@ -819,38 +819,41 @@ app.get('/api/my-quiz-attempts', authenticateToken, async (req, res) => {
 
 // leaderboard from scores only included top 5 plus whichever user logged in
 // score is defined as EACH attempts percent correct added onto each other
-// if user not in top 5, will still return it no matter what rank
+// leaderboard from scores - teachers see all and emails, students see top 5 + themselves
 app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
+    const isTeacher = req.user.role === 'TEACH';
 
-    const result = await pool.query(
-      `
+    const query = `
       WITH user_points AS (
         SELECT 
           u.id AS user_id,
           u.name AS user_name,
+          ${isTeacher ? 'u.email AS user_email,' : ''}
           SUM(COALESCE(ROUND((qa.score::numeric / NULLIF(qa.total_questions, 0)) * 1000), 0)) AS total_deck_points
         FROM quiz_attempts qa
         JOIN quizzes q ON qa.quiz_id = q.id
         JOIN users u ON qa.user_id = u.id
         WHERE q.deck_id = $1
-        GROUP BY u.id, u.name
+        GROUP BY u.id, u.name${isTeacher ? ', u.email' : ''}
       ),
       ranked_points AS (
         SELECT 
           user_id,
           user_name,
+          ${isTeacher ? 'user_email,' : ''}
           total_deck_points,
           RANK() OVER (ORDER BY total_deck_points DESC) as rank
         FROM user_points
       )
       SELECT * FROM ranked_points 
-      WHERE rank <= 5 OR user_id = $2
+      ${isTeacher ? '' : 'WHERE rank <= 5 OR user_id = $2'}
       ORDER BY rank ASC;
-      `,
-      [deckId, req.user.id]
-    );
+    `;
+
+    const params = isTeacher ? [deckId] : [deckId, req.user.id];
+    const result = await pool.query(query, params);
 
     res.json(result.rows);
   } catch (err) {
