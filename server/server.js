@@ -17,11 +17,11 @@ const port = 3000;
 app.get('/api/db-test', async (req, res) => {
   try { // try catch
     // postgres prompted to return current time as result in UTC
-    const result = await pool.query('SELECT NOW()'); 
+    const result = await pool.query('SELECT NOW()');
     res.json({ // json formatted response obj
-      success: true, 
+      success: true,
       message: 'Connected to AWS database',
-      time: result.rows[0].now 
+      time: result.rows[0].now
     });
   } catch (err) { // if cant connect to db, give fail response obh
     console.error('Connection error:', err);
@@ -96,7 +96,7 @@ app.get('/api/init-db', async (req, res) => {
   );
 `);
 
-await pool.query(`
+    await pool.query(`
   CREATE TABLE IF NOT EXISTS quiz_questions (
     id SERIAL PRIMARY KEY,
     quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -110,7 +110,7 @@ await pool.query(`
   );
 `);
 
-await pool.query(`
+    await pool.query(`
   CREATE TABLE IF NOT EXISTS quiz_attempts (
     id SERIAL PRIMARY KEY,
     quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -158,7 +158,7 @@ const authenticateToken = (req, res, next) => {
   // get token securely from cookie
   // used instead of header as cookie sent over http
   const token = req.cookies.token;
-  
+
   // no token
   if (!token) {
     return res.status(401).json({ error: 'Access denied' });
@@ -182,7 +182,7 @@ app.post('/api/register', async (req, res) => {
     if (!email || !password || !role) {
       return res.status(400).json({ error: 'Email, password, and role are required' });
     }
-    
+
     // hash the password using bcrypt
     const strength = await bcrypt.genSalt(10);
     const pw_hash = await bcrypt.hash(password, strength);
@@ -209,21 +209,21 @@ app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [email]);
     if (result.rows.length === 0) { // no account found
-      return res.status(401).json({ error: 'Incorrect Email or Password'});
+      return res.status(401).json({ error: 'Incorrect Email or Password' });
     }
     // row 0 keeps the user data found
     const user = result.rows[0];
     // entered password vs hashed password
     const validPassword = await bcrypt.compare(password, user.pw_hash);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Incorrect Email or Password'});
+      return res.status(401).json({ error: 'Incorrect Email or Password' });
     }
     // create jwt token by signing it, 24hr expiry
     const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
-    
+
     // token now rests in http cookie
-    res.cookie('token', token, { 
-      httpOnly: true, 
+    res.cookie('token', token, {
+      httpOnly: true,
       // uses the secure flag http(S) if hosting it normally (not on localhost)
       secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours cookie lifetime
@@ -234,10 +234,10 @@ app.post('/api/login', async (req, res) => {
 
     // dont need to include token in response, lives in cookie
     res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role, name: user.name } });
-    } catch (err) {
-      console.error('Login error FULL:', err.message, err.stack);
-      res.status(500).json({ error: 'Failed to login' });
-    }
+  } catch (err) {
+    console.error('Login error FULL:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to login' });
+  }
 });
 
 // logout to destroy cookie
@@ -488,8 +488,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
     const { cards } = req.body;
     // imported array
     if (!cards || !Array.isArray(cards)) {
-      return res.status(400).json({ 
-        error: 'cards array is required' 
+      return res.status(400).json({
+        error: 'cards array is required'
       });
     }
 
@@ -500,8 +500,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'Deck not found or not owned' 
+      return res.status(404).json({
+        error: 'Deck not found or not owned'
       });
     }
 
@@ -526,7 +526,7 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
         [deckId, card.front, card.back]
       );
     }
-    
+
     // update deck timestamp
     await pool.query(
       `UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
@@ -538,8 +538,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
   } catch (err) {
     await pool.query('ROLLBACK');
     console.error('Import deck error:', err);
-    res.status(500).json({ 
-      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck' 
+    res.status(500).json({
+      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck'
     });
   }
 });
@@ -814,6 +814,48 @@ app.get('/api/my-quiz-attempts', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Get quiz attempts error:', err);
     res.status(500).json({ error: 'Failed to fetch quiz attempts' });
+  }
+});
+
+// leaderboard from scores only included top 5 plus whichever user logged in
+// score is defined as EACH attempts percent correct added onto each other
+// if user not in top 5, will still return it no matter what rank
+app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    const result = await pool.query(
+      `
+      WITH user_points AS (
+        SELECT 
+          u.id AS user_id,
+          u.name AS user_name,
+          SUM(COALESCE(ROUND((qa.score::numeric / NULLIF(qa.total_questions, 0)) * 1000), 0)) AS total_deck_points
+        FROM quiz_attempts qa
+        JOIN quizzes q ON qa.quiz_id = q.id
+        JOIN users u ON qa.user_id = u.id
+        WHERE q.deck_id = $1
+        GROUP BY u.id, u.name
+      ),
+      ranked_points AS (
+        SELECT 
+          user_id,
+          user_name,
+          total_deck_points,
+          RANK() OVER (ORDER BY total_deck_points DESC) as rank
+        FROM user_points
+      )
+      SELECT * FROM ranked_points 
+      WHERE rank <= 5 OR user_id = $2
+      ORDER BY rank ASC;
+      `,
+      [deckId, req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get deck leaderboard error:', err);
+    res.status(500).json({ error: 'Failed to fetch deck leaderboard' });
   }
 });
 
