@@ -1,19 +1,20 @@
-import { useState, useEffect, useContext } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
 
 function Card({ card, isFlipped, isMatched, onClick }) {
   return (
     <div
-      className={`w-24 h-24 bg-white border-2 rounded-lg cursor-pointer flex items-center justify-center text-sm font-medium transition-all duration-300 ${
+      className={`w-36 h-28 bg-white border-2 rounded-lg cursor-pointer flex items-center justify-center text-sm font-medium transition-all duration-300 ${
         isFlipped || isMatched ? 'bg-blue-100 border-blue-300' : 'bg-gray-100 border-gray-300 hover:bg-gray-200'
       } ${isMatched ? 'opacity-50' : ''}`}
       onClick={onClick}
     >
       {isFlipped || isMatched ? (
-        <div className="text-center p-1">
-          {card.side === 'front' ? card.content : card.back}
+        <div className="w-full h-full overflow-y-auto flex items-center justify-center px-3 py-2">
+          <p className="text-center leading-snug break-words px-1">
+            {card.content}
+          </p>
         </div>
       ) : (
         '?'
@@ -24,7 +25,6 @@ function Card({ card, isFlipped, isMatched, onClick }) {
 
 export default function MatchingGame() {
   const { deckId } = useParams();
-  const { user } = useContext(BackendAuthConnection);
   const [cards, setCards] = useState([]);
   const [flippedCards, setFlippedCards] = useState([]);
   const [matchedPairs, setMatchedPairs] = useState(new Set());
@@ -45,20 +45,24 @@ export default function MatchingGame() {
       const res = await fetch(`/api/decks/${deckId}/cards`);
       const data = await res.json();
       if (res.ok) {
+        // Hard-cap board at 4x4 (16 cards = 8 pairs) for large decks.
+        const shuffledFlashcards = [...data].sort(() => Math.random() - 0.5);
+        const selectedFlashcards = shuffledFlashcards.length >= 8
+          ? shuffledFlashcards.slice(0, 8)
+          : shuffledFlashcards;
+
         // Create game cards: each flashcard becomes two cards (front and back)
         const gameCards = [];
-        data.forEach((card, index) => {
+        selectedFlashcards.forEach((card, index) => {
           gameCards.push({
             id: `front-${index}`,
             content: card.front,
-            back: card.back,
             side: 'front',
             pairId: index
           });
           gameCards.push({
             id: `back-${index}`,
             content: card.back,
-            back: card.front,
             side: 'back',
             pairId: index
           });
@@ -103,7 +107,12 @@ export default function MatchingGame() {
       const firstCard = cards.find((c) => c.id === firstId);
       const secondCard = cards.find((c) => c.id === secondId);
 
-      if (firstCard && secondCard && firstCard.pairId === secondCard.pairId) {
+      if (
+        firstCard &&
+        secondCard &&
+        firstCard.pairId === secondCard.pairId &&
+        firstCard.side !== secondCard.side
+      ) {
         setMatchedPairs((prev) => {
           const next = new Set(prev);
           next.add(firstCard.pairId);
@@ -172,7 +181,7 @@ export default function MatchingGame() {
           </button>
         )}
 
-        <div className="grid grid-cols-4 gap-4 max-w-2xl">
+        <div className="grid grid-cols-4 gap-5 max-w-4xl">
           {cards.map((card) => (
             <Card
               key={card.id}
