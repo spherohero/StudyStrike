@@ -41,6 +41,31 @@ export default function StudyPage() {
     }
   }
 
+  async function handleExport() {
+    try {
+      const res = await fetch(`/api/decks/${deckId}/export`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || "Failed to export deck");
+        return;
+      }
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeTitle = (data.title || `deck_${deckId}`).replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      a.href = url;
+      a.download = `${safeTitle}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Network error during export");
+    }
+  }
+
   function nextCard() {
     setFlipped(false);
     setTimeout(() => setIndex((prev) => (prev + 1) % cards.length), 150);
@@ -102,12 +127,26 @@ export default function StudyPage() {
           <h2 className="text-3xl font-bold">{deck?.title || "Study"}</h2>
           {deck?.description && <p className="text-gray-400 text-sm mt-1">{deck.description}</p>}
         </div>
-        <button
-          onClick={() => navigate(`/create/${deckId}`)}
-          className="text-sm text-gray-500 hover:underline"
-        >
-          Edit Deck
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(`/game/${deckId}`)}
+            className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-200 transition"
+          >
+            Play Game
+          </button>
+          <button
+            onClick={handleExport}
+            className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
+          >
+            Export Deck
+          </button>
+          <button
+            onClick={() => navigate(`/create/${deckId}`)}
+            className="text-sm text-gray-500 hover:underline"
+          >
+            Edit Deck
+          </button>
+        </div>
       </div>
 
       {/* FLASHCARD */}

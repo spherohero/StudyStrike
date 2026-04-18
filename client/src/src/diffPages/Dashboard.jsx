@@ -5,7 +5,7 @@ import Navbar from "../components/Navbar.jsx";
 
 const DECKS_PER_PAGE = 6;
 
-function DeckCard({ deck, onDelete, onDuplicate, onEdit }) {
+function DeckCard({ deck, onDelete, onDuplicate, onExport }) {
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
@@ -26,22 +26,28 @@ function DeckCard({ deck, onDelete, onDuplicate, onEdit }) {
           Study
         </Link>
         <Link
+          to={`/game/${deck.id}`}
+          className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-200 transition"
+        >
+          Play Game
+        </Link>
+        <Link
           to={`/create/${deck.id}`}
           className="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition"
         >
           Edit
         </Link>
         <button
-          onClick={() => onEdit(deck)}
-          className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200 transition"
-        >
-          Rename
-        </button>
-        <button
           onClick={() => onDuplicate(deck.id)}
           className="text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-lg hover:bg-yellow-200 transition"
         >
           Duplicate
+        </button>
+        <button
+          onClick={() => onExport(deck.id)}
+          className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
+        >
+          Export
         </button>
         <button
           onClick={() => onDelete(deck.id)}
@@ -64,17 +70,74 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  async function handleExport(deckId) {
+    try {
+      const res = await fetch(`/api/decks/${deckId}/export`);
+      const data = await res.json();
+      if (res.ok) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeTitle = (data.title || `deck_${deckId}`).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${safeTitle}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert(data.error || 'Failed to export deck');
+      }
+    } catch {
+      alert('Network error during export');
+    }
+  }
+
+  async function handleImport() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        if (!data.title || !data.cards || !Array.isArray(data.cards)) {
+          alert('Invalid deck file format');
+          return;
+        }
+        const res = await fetch('/api/decks/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            title: data.title,
+            description: data.description || '',
+            cards: data.cards
+          }),
+        });
+        const result = await res.json();
+        if (res.ok) {
+          fetchDecks(); // Refresh
+          alert('Deck imported successfully');
+        } else {
+          alert(result.error || 'Failed to import deck');
+        }
+      } catch {
+        alert('Error reading or parsing file');
+      }
+    };
+    input.click();
+  }
+
   // New deck modal state
   const [showModal, setShowModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Edit deck modal state
-  const [editingDeck, setEditingDeck] = useState(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDesc, setEditDesc] = useState("");
-  const [saving, setSaving] = useState(false);
+  const token = localStorage.getItem("token");
 
   useEffect(() => {
     fetchDecks();
@@ -125,18 +188,9 @@ export default function Dashboard() {
   }
 
   async function handleDelete(deckId) {
-    // working now
     if (!confirm("Delete this deck and all its cards?")) return;
-    try {
-      const res = await fetch(`/api/decks/${deckId}`, { method: "DELETE" });
-      if (res.ok) {
-        setDecks(decks.filter((d) => d.id !== deckId));
-      } else {
-        console.error("Failed to delete the deck on the server.");
-      }
-    } catch (err) {
-      console.error("Network error deleting deck:", err);
-    }
+    // Optimistic remove for now. Add a backend delete route later if needed.
+    setDecks(decks.filter((d) => d.id !== deckId));
   }
 
   async function handleDuplicate(deckId) {
@@ -148,33 +202,6 @@ export default function Dashboard() {
       }
     } catch {
       // silently fail
-    }
-  }
-
-  function openEditModal(deck) {
-    setEditingDeck(deck);
-    setEditTitle(deck.title);
-    setEditDesc(deck.description || "");
-  }
-
-  async function handleEditSave() {
-    if (!editTitle.trim()) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/decks/${editingDeck.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: editTitle, description: editDesc }),
-      });
-      const updated = await res.json();
-      if (res.ok) {
-        setDecks(decks.map((d) => (d.id === editingDeck.id ? updated : d)));
-        setEditingDeck(null);
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -195,12 +222,20 @@ export default function Dashboard() {
         <p className="mt-3 text-lg opacity-90 max-w-xl">
           Create personalized flashcard decks and practice efficiently.
         </p>
-        <button
-          onClick={() => setShowModal(true)}
-          className="mt-6 bg-white text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
-        >
-          + New Deck
-        </button>
+        <div className="mt-6 flex flex-wrap gap-4">
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-white text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
+          >
+            + New Deck
+          </button>
+          <button
+            onClick={handleImport}
+            className="bg-white/90 text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
+          >
+            Import Deck
+          </button>
+        </div>
       </div>
 
       {/* CONTENT */}
@@ -235,7 +270,7 @@ export default function Dashboard() {
                 deck={deck}
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
-                onEdit={openEditModal}
+                onExport={handleExport}
               />
             ))}
           </div>
@@ -282,44 +317,6 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => setShowModal(false)}
-                className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT DECK MODAL */}
-      {editingDeck && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-            <h3 className="text-xl font-bold mb-4">Rename Deck</h3>
-            <input
-              placeholder="Deck title *"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleEditSave()}
-              className="w-full border rounded-xl px-4 py-3 mb-3 text-sm outline-none focus:border-[#9D6381]"
-            />
-            <textarea
-              placeholder="Description (optional)"
-              value={editDesc}
-              onChange={(e) => setEditDesc(e.target.value)}
-              rows={3}
-              className="w-full border rounded-xl px-4 py-3 mb-4 text-sm outline-none focus:border-[#9D6381] resize-none"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={handleEditSave}
-                disabled={saving || !editTitle.trim()}
-                className="flex-1 bg-[#9D6381] text-white py-3 rounded-xl text-sm font-medium disabled:opacity-50 hover:bg-[#8a5270] transition"
-              >
-                {saving ? "Saving…" : "Save Changes"}
-              </button>
-              <button
-                onClick={() => setEditingDeck(null)}
                 className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
               >
                 Cancel
