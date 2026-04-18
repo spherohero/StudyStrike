@@ -71,9 +71,20 @@ app.get('/api/init-db', async (req, res) => {
       );
     `);
 
-    // if table already exists
+    // if table already exists AND NOW given through invite code of 6 alphanumeric
     await pool.query(`
       ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_code VARCHAR(6) UNIQUE;
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shared_deck_access (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, deck_id)
+      );
     `);
 
     await pool.query(`
@@ -284,10 +295,18 @@ app.post('/api/decks', async (req, res) => {
   }
 });
 
-app.get('/api/decks', async (req, res) => {
+// get decks based on active and if invited to view them
+app.get('/api/decks', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM decks WHERE status = 'active' ORDER BY id ASC`
+      `
+      SELECT DISTINCT d.* 
+      FROM decks d
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+      WHERE d.status = 'active' AND (d.user_id = $1 OR sda.user_id = $1)
+      ORDER BY d.id ASC
+      `,
+      [req.user.id]
     );
 
     res.json(result.rows);
@@ -364,6 +383,55 @@ app.patch('/api/decks/:deckId', async (req, res) => {
   } catch (err) {
     console.error('Edit deck error:', err);
     res.status(500).json({ error: 'Failed to edit deck' });
+  }
+});
+
+// create invite code for a deck
+// code becomes invalid after 24hrs or if refreshed
+app.post('/api/decks/:deckId/invite', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    // whoami (just ownership though lol)
+    const deckCheck = await pool.query(`SELECT id FROM decks WHERE id = $1 AND user_id = $2`, [deckId, req.user.id]);
+    if (deckCheck.rows.length === 0) return res.status(403).json({ error: 'Deck not owned' });
+
+    // 6 char code just using random fx
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    const result = await pool.query(
+      `UPDATE decks SET invite_code = $1, invite_expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $2 RETURNING invite_code, invite_expires_at`,
+      [code, deckId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Generate invite error:', err);
+    res.status(500).json({ error: 'Failed to generate invite code' });
+  }
+});
+
+// use invite code to join a deck
+app.post('/api/decks/join', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Code is required' });
+
+    const deckResult = await pool.query(
+      `SELECT id FROM decks WHERE invite_code = $1 AND invite_expires_at > CURRENT_TIMESTAMP`,
+      [code.toUpperCase()]
+    );
+
+    if (deckResult.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired code' });
+    const deckId = deckResult.rows[0].id;
+
+    await pool.query(
+      `INSERT INTO shared_deck_access (user_id, deck_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [req.user.id, deckId]
+    );
+
+    res.json({ success: true, message: 'Successfully joined deck', deckId });
+  } catch (err) {
+    console.error('Join deck error:', err);
+    res.status(500).json({ error: 'Failed to join deck' });
   }
 });
 
@@ -679,14 +747,19 @@ app.get('/api/decks/:deckId/quizzes', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
 
-    // fix: check ownership before returning
+    // fix: check ownership or joined status before returning
     const deckResult = await pool.query(
-      `SELECT id FROM decks WHERE id = $1 AND user_id = $2`,
+      `
+      SELECT d.id 
+      FROM decks d 
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id 
+      WHERE d.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
       [deckId, req.user.id]
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(403).json({ error: 'Deck not owned' });
+      return res.status(403).json({ error: 'No access to this deck' });
     }
 
 
@@ -707,14 +780,20 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params;
 
-    //fix: join decks again
+    //fix: join decks again and evaluate read access
     const quizResult = await pool.query(
-      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      `
+      SELECT q.* 
+      FROM quizzes q 
+      JOIN decks d ON q.deck_id = d.id 
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id 
+      WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
       [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found' });
+      return res.status(404).json({ error: 'Quiz not found or unaccessible' });
     }
 
     const questionsResult = await pool.query(
