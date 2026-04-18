@@ -79,13 +79,14 @@ export default function Dashboard() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${data.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+        const safeTitle = (data.title || `deck_${deckId}`).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        a.download = `${safeTitle}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } else {
-        alert('Failed to export deck');
+        alert(data.error || 'Failed to export deck');
       }
     } catch {
       alert('Network error during export');
