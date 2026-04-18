@@ -7,6 +7,7 @@ import Home from "./src/diffPages/Home_Page.jsx";
 import Dashboard from "./src/diffPages/Dashboard.jsx";
 import Study from "./src/diffPages/Study_Page.jsx";
 import Create from "./src/diffPages/Create_Edit_Card.jsx";
+import MatchingGame from "./src/diffPages/MatchingGame.jsx";
 
 function ProtectedRoute({ children }) {
   const { user } = useContext(BackendAuthConnection);
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/study/:deckId" element={<ProtectedRoute><Study /></ProtectedRoute>} />
         <Route path="/study" element={<ProtectedRoute><Study /></ProtectedRoute>} />
+        <Route path="/game/:deckId" element={<ProtectedRoute><MatchingGame /></ProtectedRoute>} />
         <Route path="/create" element={<ProtectedRoute><Create /></ProtectedRoute>} />
         <Route path="/create/:deckId" element={<ProtectedRoute><Create /></ProtectedRoute>} />
       </Routes>
