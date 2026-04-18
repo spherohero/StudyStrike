@@ -1,4 +1,4 @@
-require('dotenv').config();
+      require('dotenv').config();
 const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
 const bcrypt = require('bcryptjs');
@@ -906,7 +906,11 @@ app.get('/api/my-quiz-attempts', authenticateToken, async (req, res) => {
 // leaderboard from scores - teachers see all and emails, students see top 5 + themselves
 app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) => {
   try {
-    const { deckId } = req.params;
+    const deckId = Number(req.params.deckId);
+
+  if (!Number.isInteger(deckId)) {
+    return res.status(400).json({ error: 'Invalid deck id' });
+}
     const isTeacher = req.user.role === 'TEACH';
 
     const query = `
@@ -933,7 +937,7 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
       )
       SELECT * FROM ranked_points 
       ${isTeacher ? '' : 'WHERE rank <= 5 OR user_id = $2'}
-      ORDER BY rank ASC;
+      ORDER BY rank ASC, total_deck_points DESC, user_name ASC;
     `;
 
     const params = isTeacher ? [deckId] : [deckId, req.user.id];
