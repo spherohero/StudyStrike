@@ -391,6 +391,11 @@ app.patch('/api/decks/:deckId', async (req, res) => {
 app.post('/api/decks/:deckId/invite', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
+
+    if (req.user.role !== 'TEACH') {
+      return res.status(403).json({ error: 'Only teachers are permitted to generate invite codes.' });
+    }
+
     // whoami (just ownership though lol)
     const deckCheck = await pool.query(`SELECT id FROM decks WHERE id = $1 AND user_id = $2`, [deckId, req.user.id]);
     if (deckCheck.rows.length === 0) return res.status(403).json({ error: 'Deck not owned' });
