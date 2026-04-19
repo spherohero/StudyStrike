@@ -2,10 +2,9 @@ import { useState, useEffect, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
-
+import QuizSetupModal from "./QuizSetupModal.jsx";
 const DECKS_PER_PAGE = 6;
-
-function DeckCard({ deck, onDelete, onDuplicate, onEdit }) {
+function DeckCard({ deck, onDelete, onDuplicate, onEdit, onQuiz}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
@@ -25,6 +24,12 @@ function DeckCard({ deck, onDelete, onDuplicate, onEdit }) {
         >
           Study
         </Link>
+        <button
+        onClick={() => onQuiz(deck.id)}
+        className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
+        >
+        Quiz
+        </button>
         <Link
           to={`/create/${deck.id}`}
           className="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition"
@@ -75,7 +80,9 @@ export default function Dashboard() {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
-
+  const [quizModal, setQuizModal] = useState(null);
+  const [quizMode, setQuizMode] = useState(null);
+  const [quizCount, setQuizCount] = useState(20);
   useEffect(() => {
     fetchDecks();
   }, []);
@@ -150,11 +157,52 @@ export default function Dashboard() {
       // silently fail
     }
   }
-
+function handleQuiz(deckId) {
+  setQuizMode(null);
+  setQuizModal(deckId);
+}
+async function handleGenerateQuiz(mode, count) {
+  const deckId =quizModal;
+  try {
+    //here i did the manuall quiz build part
+    if (mode=== 'manual') {
+      //sends post req to craete the quiz
+      const resObj = await fetch('/api/quizzes', {
+        method:'POST',
+        headers: {'Content-Type': 'application/json' },
+        credentials:'include',
+        body: JSON.stringify({
+        deck_id:deckId,
+        title:'Custom Quiz'}),
+      });
+      //gets the data back form the api
+      const datBuff= await resObj.json();
+      if (resObj.ok) {
+        setQuizModal(null);
+        //takes u to the quiz bulider page
+        navigate(`/quiz-builder/${datBuff.id}/${quizModal}`);}
+      return;
+    }
+    //hits the generate quiz endpint with the deck id
+    const resObj = await fetch(`/api/decks/${deckId}/generate-quiz`, {
+      method:'POST',
+      headers: {'Content-Type':'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({mode, count }),
+    });
+    //grabs raw text then parses it
+    const rawTxt =await resObj.text();
+    const datBuff= JSON.parse(rawTxt);
+    if (resObj.ok) {
+      setQuizModal(null);
+      //sends to the quiz page
+      navigate(`/quiz/${datBuff.id}`);
+    }
+  }catch(err) {}}
   function openEditModal(deck) {
     setEditingDeck(deck);
     setEditTitle(deck.title);
-    setEditDesc(deck.description || "");
+    setEditDesc(deck.description|| "");
   }
 
   async function handleEditSave() {
@@ -236,6 +284,7 @@ export default function Dashboard() {
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
                 onEdit={openEditModal}
+                onQuiz={handleQuiz}
               />
             ))}
           </div>
@@ -328,6 +377,11 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+    {quizModal &&(
+    <QuizSetupModal
+      deckId={quizModal}
+      onClose={() =>setQuizModal(null)}
+      onStart={(mode, count) =>handleGenerateQuiz(mode, count)}/>)}
     </div>
   );
 }

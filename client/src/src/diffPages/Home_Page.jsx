@@ -10,33 +10,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
-
-      {/* NAVBAR */}
-      <header className="w-full px-10 py-4 flex items-center justify-between shadow-md">
-        <h1 className="text-xl font-bold text-slate-900">
-          StudyStrike
-        </h1>
-
-        <nav className="flex items-center gap-8 text-slate-900 text-sm">
-          {/* <span className="cursor-pointer">Home</span> */}
-          <Link to="/" className="cursor-pointer underline">
-          Home
-            </Link>
-          {/* <span className="cursor-pointer">Study</span> */}
-          <Link to="/study" className="cursor-pointer">
-             Study
-            </Link>
-            <Link to="/create" className="cursor-pointer">
-             Create
-            </Link>
-            <Link to="/dashboard" className="cursor-pointer">
-             Dashboard
-            </Link>
-          <span className="cursor-pointer">Quiz</span>
-          <Link to="/leaderboard" className="cursor-pointer">Leaderboard</Link>
-        </nav>
-        <div className="w-10 h-10 rounded-full bg-[#9D6381]" />
-      </header>
+      <Navbar activePage="home" />
 
       {/* HERO */}
       <main className="flex flex-1 items-center justify-between px-16 py-16 gap-10">
