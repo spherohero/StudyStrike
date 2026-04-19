@@ -145,6 +145,15 @@ app.get('/api/init-db', async (req, res) => {
   );
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS study_sessions (
+    id SERIAL PRIMARY KEY,
+    deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    duration_seconds INTEGER NOT NULL CHECK (duration_seconds > 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
 
     res.json({ success: true, message: 'Database tables created successfully.' });
   } catch (err) {
@@ -625,7 +634,7 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
     await pool.query('ROLLBACK');
     console.error('Import deck error:', err);
     res.status(500).json({
-      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck'
+      error: err.message === 'Invalid card payload. Missing term or definition.' ? err.message : 'Failed to import deck'
     });
   }
 });
@@ -970,7 +979,14 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
           CAST(GREATEST(COALESCE(ROUND((8.0 / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
         FROM minigame_attempts ma
         WHERE ma.deck_id = $1
-      ),
+
+        UNION ALL
+        SELECT
+            ss.user_id,
+            CAST(FLOOR(ss.duration_seconds / 60.0) * 5 AS INTEGER) AS points
+        FROM study_sessions ss
+        WHERE ss.deck_id = $1
+  ),
       user_totals AS (
         SELECT 
           ap.user_id,
@@ -1056,6 +1072,121 @@ app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res)
   }
   res.status(201).json(quizDat);
 });
+
+app.post('/api/decks/:deckId/study-time', authenticateToken, async (req, res) => {
+  try {
+    const deckId = Number(req.params.deckId);
+    const { duration_seconds } = req.body;
+
+    if (!Number.isInteger(deckId)) {
+      return res.status(400).json({ error: 'Invalid deck id' });
+    }
+
+    if (!Number.isInteger(duration_seconds) || duration_seconds <= 0) {
+      return res.status(400).json({ error: 'duration_seconds must be a positive integer' });
+    }
+
+    const deckAccessResult = await pool.query(
+      `
+      SELECT d.id
+      FROM decks d
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+      WHERE d.id = $1
+        AND d.status = 'active'
+        AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
+      [deckId, req.user.id]
+    );
+
+    if (deckAccessResult.rows.length === 0) {
+      return res.status(403).json({ error: 'No access to this deck' });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO study_sessions (deck_id, user_id, duration_seconds)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+      `,
+      [deckId, req.user.id, duration_seconds]
+    );
+
+    res.status(201).json({
+      message: 'Study time recorded successfully',
+      study_session: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Submit study time error:', err);
+    res.status(500).json({ error: 'Failed to record study time' });
+  }
+});
+
+app.get('/api/my-study-sessions', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT ss.*, d.title AS deck_title
+      FROM study_sessions ss
+      JOIN decks d ON ss.deck_id = d.id
+      WHERE ss.user_id = $1
+      ORDER BY ss.created_at DESC;
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get study sessions error:', err);
+    res.status(500).json({ error: 'Failed to fetch study sessions' });
+  }
+});
+
+app.get('/api/decks/:deckId/study-time', authenticateToken, async (req, res) => {
+  try {
+    const deckId = Number(req.params.deckId);
+
+    if (!Number.isInteger(deckId)) {
+      return res.status(400).json({ error: 'Invalid deck id' });
+    }
+
+    const deckAccessResult = await pool.query(
+      `
+      SELECT d.id
+      FROM decks d
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+      WHERE d.id = $1
+        AND d.status = 'active'
+        AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
+      [deckId, req.user.id]
+    );
+
+    if (deckAccessResult.rows.length === 0) {
+      return res.status(403).json({ error: 'No access to this deck' });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        u.id AS user_id,
+        u.name AS user_name,
+        SUM(ss.duration_seconds) AS total_study_seconds
+      FROM study_sessions ss
+      JOIN users u ON ss.user_id = u.id
+      WHERE ss.deck_id = $1
+      GROUP BY u.id, u.name
+      ORDER BY total_study_seconds DESC;
+      `,
+      [deckId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get deck study time error:', err);
+    res.status(500).json({ error: 'Failed to fetch study time' });
+  }
+});
+
 //allows for express and server to wait for client requests on the selected port
 app.listen(port, () => {
   console.log(`StudyStrike running on http://localhost:${port}`);
