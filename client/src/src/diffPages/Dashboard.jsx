@@ -4,12 +4,7 @@ import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
 import QuizSetupModal from "./QuizSetupModal.jsx";
 const DECKS_PER_PAGE = 6;
-<<<<<<< HEAD
-function DeckCard({ deck, onDelete, onDuplicate, onEdit, onQuiz}){
-=======
-
-function DeckCard({ deck, onDelete, onDuplicate, onExport }) {
->>>>>>> origin/main
+function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
@@ -29,18 +24,18 @@ function DeckCard({ deck, onDelete, onDuplicate, onExport }) {
         >
           Study
         </Link>
-        <button
-        onClick={() => onQuiz(deck.id)}
-        className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
-        >
-        Quiz
-        </button>
         <Link
           to={`/game/${deck.id}`}
           className="text-sm bg-orange-100 text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-200 transition"
         >
           Play Game
         </Link>
+        <button
+        onClick={() => onQuiz(deck.id)}
+        className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
+        >
+        Quiz
+        </button>
         <Link
           to={`/create/${deck.id}`}
           className="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition"
@@ -147,7 +142,6 @@ export default function Dashboard() {
   const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
 
-<<<<<<< HEAD
   // Edit deck modal state
   const [editingDeck, setEditingDeck] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -156,10 +150,6 @@ export default function Dashboard() {
   const [quizModal, setQuizModal] = useState(null);
   const [quizMode, setQuizMode] = useState(null);
   const [quizCount, setQuizCount] = useState(20);
-=======
-  const token = localStorage.getItem("token");
-
->>>>>>> origin/main
   useEffect(() => {
     fetchDecks();
   }, []);
@@ -167,7 +157,7 @@ export default function Dashboard() {
   async function fetchDecks() {
     setLoading(true);
     try {
-      const res = await fetch("/api/decks");
+      const res = await fetch("/api/decks", {credentials: "include" });
       const data = await res.json();
       if (res.ok) {
         // Filter to only show user's own decks
@@ -182,7 +172,6 @@ export default function Dashboard() {
       setLoading(false);
     }
   }
-
   async function handleCreate() {
     if (!newTitle.trim()) return;
     setCreating(true);
@@ -225,7 +214,6 @@ export default function Dashboard() {
       // silently fail
     }
   }
-<<<<<<< HEAD
 function handleQuiz(deckId) {
   setQuizMode(null);
   setQuizModal(deckId);
@@ -294,8 +282,6 @@ async function handleGenerateQuiz(mode, count) {
       setSaving(false);
     }
   }
-=======
->>>>>>> origin/main
 
   const filtered = decks.filter((d) =>
     d.title.toLowerCase().includes(search.toLowerCase())
@@ -362,12 +348,8 @@ async function handleGenerateQuiz(mode, count) {
                 deck={deck}
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
-<<<<<<< HEAD
-                onEdit={openEditModal}
-                onQuiz={handleQuiz}
-=======
                 onExport={handleExport}
->>>>>>> origin/main
+                onQuiz={handleQuiz}
               />
             ))}
           </div>
@@ -422,8 +404,6 @@ async function handleGenerateQuiz(mode, count) {
           </div>
         </div>
       )}
-<<<<<<< HEAD
-
       {/* EDIT DECK MODAL */}
       {editingDeck && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -466,8 +446,6 @@ async function handleGenerateQuiz(mode, count) {
       deckId={quizModal}
       onClose={() =>setQuizModal(null)}
       onStart={(mode, count) =>handleGenerateQuiz(mode, count)}/>)}
-=======
->>>>>>> origin/main
     </div>
   );
 }

@@ -7,13 +7,10 @@ import Home from "./src/diffPages/Home_Page.jsx";
 import Dashboard from "./src/diffPages/Dashboard.jsx";
 import Study from "./src/diffPages/Study_Page.jsx";
 import Create from "./src/diffPages/Create_Edit_Card.jsx";
-<<<<<<< HEAD
 import Leaderboard from "./src/diffPages/Leaderboard.jsx";
 import QuizPage from "./src/diffPages/Quiz_Page";
 import QuizBuilder from "./src/diffPages/QuizBuilder";
-=======
 import MatchingGame from "./src/diffPages/MatchingGame.jsx";
->>>>>>> origin/main
 
 function ProtectedRoute({ children }) {
   const { user } = useContext(BackendAuthConnection);
