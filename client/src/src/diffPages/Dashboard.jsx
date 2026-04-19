@@ -2,10 +2,9 @@ import { useState, useEffect, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
-
+import QuizSetupModal from "./QuizSetupModal.jsx";
 const DECKS_PER_PAGE = 6;
-
-function DeckCard({ deck, onDelete, onDuplicate, onExport }) {
+function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
@@ -31,6 +30,12 @@ function DeckCard({ deck, onDelete, onDuplicate, onExport }) {
         >
           Play Game
         </Link>
+        <button
+        onClick={() => onQuiz(deck.id)}
+        className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
+        >
+        Quiz
+        </button>
         <Link
           to={`/create/${deck.id}`}
           className="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition"
@@ -137,8 +142,14 @@ export default function Dashboard() {
   const [newDesc, setNewDesc] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const token = localStorage.getItem("token");
-
+  // Edit deck modal state
+  const [editingDeck, setEditingDeck] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [quizModal, setQuizModal] = useState(null);
+  const [quizMode, setQuizMode] = useState(null);
+  const [quizCount, setQuizCount] = useState(20);
   useEffect(() => {
     fetchDecks();
   }, []);
@@ -146,7 +157,7 @@ export default function Dashboard() {
   async function fetchDecks() {
     setLoading(true);
     try {
-      const res = await fetch("/api/decks");
+      const res = await fetch("/api/decks", {credentials: "include" });
       const data = await res.json();
       if (res.ok) {
         // Filter to only show user's own decks
@@ -161,7 +172,6 @@ export default function Dashboard() {
       setLoading(false);
     }
   }
-
   async function handleCreate() {
     if (!newTitle.trim()) return;
     setCreating(true);
@@ -202,6 +212,74 @@ export default function Dashboard() {
       }
     } catch {
       // silently fail
+    }
+  }
+function handleQuiz(deckId) {
+  setQuizMode(null);
+  setQuizModal(deckId);
+}
+async function handleGenerateQuiz(mode, count) {
+  const deckId =quizModal;
+  try {
+    //here i did the manuall quiz build part
+    if (mode=== 'manual') {
+      //sends post req to craete the quiz
+      const resObj = await fetch('/api/quizzes', {
+        method:'POST',
+        headers: {'Content-Type': 'application/json' },
+        credentials:'include',
+        body: JSON.stringify({
+        deck_id:deckId,
+        title:'Custom Quiz'}),
+      });
+      //gets the data back form the api
+      const datBuff= await resObj.json();
+      if (resObj.ok) {
+        setQuizModal(null);
+        //takes u to the quiz bulider page
+        navigate(`/quiz-builder/${datBuff.id}/${quizModal}`);}
+      return;
+    }
+    //hits the generate quiz endpint with the deck id
+    const resObj = await fetch(`/api/decks/${deckId}/generate-quiz`, {
+      method:'POST',
+      headers: {'Content-Type':'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({mode, count }),
+    });
+    //grabs raw text then parses it
+    const rawTxt =await resObj.text();
+    const datBuff= JSON.parse(rawTxt);
+    if (resObj.ok) {
+      setQuizModal(null);
+      //sends to the quiz page
+      navigate(`/quiz/${datBuff.id}`);
+    }
+  }catch(err) {}}
+  function openEditModal(deck) {
+    setEditingDeck(deck);
+    setEditTitle(deck.title);
+    setEditDesc(deck.description|| "");
+  }
+
+  async function handleEditSave() {
+    if (!editTitle.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/decks/${editingDeck.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle, description: editDesc }),
+      });
+      const updated = await res.json();
+      if (res.ok) {
+        setDecks(decks.map((d) => (d.id === editingDeck.id ? updated : d)));
+        setEditingDeck(null);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -271,6 +349,7 @@ export default function Dashboard() {
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
                 onExport={handleExport}
+                onQuiz={handleQuiz}
               />
             ))}
           </div>
@@ -325,6 +404,48 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      {/* EDIT DECK MODAL */}
+      {editingDeck && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4">Rename Deck</h3>
+            <input
+              placeholder="Deck title *"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleEditSave()}
+              className="w-full border rounded-xl px-4 py-3 mb-3 text-sm outline-none focus:border-[#9D6381]"
+            />
+            <textarea
+              placeholder="Description (optional)"
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              rows={3}
+              className="w-full border rounded-xl px-4 py-3 mb-4 text-sm outline-none focus:border-[#9D6381] resize-none"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleEditSave}
+                disabled={saving || !editTitle.trim()}
+                className="flex-1 bg-[#9D6381] text-white py-3 rounded-xl text-sm font-medium disabled:opacity-50 hover:bg-[#8a5270] transition"
+              >
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+              <button
+                onClick={() => setEditingDeck(null)}
+                className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    {quizModal &&(
+    <QuizSetupModal
+      deckId={quizModal}
+      onClose={() =>setQuizModal(null)}
+      onStart={(mode, count) =>handleGenerateQuiz(mode, count)}/>)}
     </div>
   );
 }

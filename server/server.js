@@ -1003,6 +1003,59 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
   }
 });
 
+app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res) => {
+  const { deckId } =req.params;
+  const {mode, count}= req.body;
+  const deckRes= await pool.query(
+    `SELECT * FROM decks WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+    [deckId, req.user.id]
+  );
+  if (deckRes.rows.length === 0) return res.status(404).json({ error:'Deck not found or not owned' });
+  const deckDat= deckRes.rows[0];
+  const cardsRes = await pool.query(
+    `SELECT * FROM flashcards WHERE deck_id = $1`,
+    [deckId]
+  );
+  //grabs cards and shuffles em
+  let cardsBuff= cardsRes.rows;
+  if (cardsBuff.length < 2) return res.status(400).json({ error:'Need at least 2 flashcards to generate a quiz' });
+  cardsBuff = cardsBuff.sort(() => Math.random() - 0.5).slice(0, count || cardsBuff.length);
+  const quizRes= await pool.query(
+    `INSERT INTO quizzes (deck_id, title) VALUES ($1, $2) RETURNING *`,
+    [deckId, deckDat.title]
+  );
+  const quizDat =quizRes.rows[0];
+  for (const card of cardsBuff) {
+    if (mode ==='tf') {
+      //builds true false question
+      const isTru= Math.random() > 0.5;
+      const otherCards = cardsBuff.filter(c => c.id !== card.id);
+      const wrongBck= otherCards[Math.floor(Math.random() * otherCards.length)]?.back || 'False';
+      let questTxt =`True or False: "${card.front}" means "${card.back}"`;
+      if (!isTru) questTxt = `True or False: "${card.front}" means "${wrongBck}"`;
+      let correctOpt= 'A';
+      if (!isTru) correctOpt = 'B';
+      await pool.query(
+        `INSERT INTO quiz_questions (quiz_id, question, option_a, option_b, option_c, option_d, correct_option)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [quizDat.id, questTxt, 'True', 'False', '', '', correctOpt]
+      );
+    } else {
+      //builds multple choice question
+      const otherCards = cardsBuff.filter(c => c.id !== card.id).sort(() => Math.random() - 0.5).slice(0, 3);
+      const wrongOpts= otherCards.map(c => c.back);
+      const allOpts = [card.back, ...wrongOpts].sort(() => Math.random() - 0.5);
+      while (allOpts.length < 4) allOpts.push('N/A');
+      const correctLtr =['A', 'B', 'C', 'D'][allOpts.indexOf(card.back)];
+      await pool.query(
+        `INSERT INTO quiz_questions (quiz_id, question, option_a, option_b, option_c, option_d, correct_option)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [quizDat.id, card.front, allOpts[0], allOpts[1], allOpts[2], allOpts[3], correctLtr]
+      );
+    }
+  }
+  res.status(201).json(quizDat);
+});
 //allows for express and server to wait for client requests on the selected port
 app.listen(port, () => {
   console.log(`StudyStrike running on http://localhost:${port}`);
