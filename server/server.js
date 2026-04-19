@@ -1,4 +1,4 @@
-require('dotenv').config();
+      require('dotenv').config();
 const express = require('express'); //express.js thru node for web comm
 const pool = require('./db');  //imports created postgres pool from db.js
 const bcrypt = require('bcryptjs');
@@ -17,11 +17,11 @@ const port = 3000;
 app.get('/api/db-test', async (req, res) => {
   try { // try catch
     // postgres prompted to return current time as result in UTC
-    const result = await pool.query('SELECT NOW()'); 
+    const result = await pool.query('SELECT NOW()');
     res.json({ // json formatted response obj
-      success: true, 
+      success: true,
       message: 'Connected to AWS database',
-      time: result.rows[0].now 
+      time: result.rows[0].now
     });
   } catch (err) { // if cant connect to db, give fail response obh
     console.error('Connection error:', err);
@@ -71,9 +71,20 @@ app.get('/api/init-db', async (req, res) => {
       );
     `);
 
-    // if table already exists
+    // if table already exists AND NOW given through invite code of 6 alphanumeric
     await pool.query(`
       ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_code VARCHAR(6) UNIQUE;
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shared_deck_access (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, deck_id)
+      );
     `);
 
     await pool.query(`
@@ -96,7 +107,7 @@ app.get('/api/init-db', async (req, res) => {
   );
 `);
 
-await pool.query(`
+    await pool.query(`
   CREATE TABLE IF NOT EXISTS quiz_questions (
     id SERIAL PRIMARY KEY,
     quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -110,7 +121,7 @@ await pool.query(`
   );
 `);
 
-await pool.query(`
+    await pool.query(`
   CREATE TABLE IF NOT EXISTS quiz_attempts (
     id SERIAL PRIMARY KEY,
     quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
@@ -158,7 +169,7 @@ const authenticateToken = (req, res, next) => {
   // get token securely from cookie
   // used instead of header as cookie sent over http
   const token = req.cookies.token;
-  
+
   // no token
   if (!token) {
     return res.status(401).json({ error: 'Access denied' });
@@ -182,7 +193,7 @@ app.post('/api/register', async (req, res) => {
     if (!email || !password || !role) {
       return res.status(400).json({ error: 'Email, password, and role are required' });
     }
-    
+
     // hash the password using bcrypt
     const strength = await bcrypt.genSalt(10);
     const pw_hash = await bcrypt.hash(password, strength);
@@ -209,21 +220,21 @@ app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [email]);
     if (result.rows.length === 0) { // no account found
-      return res.status(401).json({ error: 'Incorrect Email or Password'});
+      return res.status(401).json({ error: 'Incorrect Email or Password' });
     }
     // row 0 keeps the user data found
     const user = result.rows[0];
     // entered password vs hashed password
     const validPassword = await bcrypt.compare(password, user.pw_hash);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Incorrect Email or Password'});
+      return res.status(401).json({ error: 'Incorrect Email or Password' });
     }
     // create jwt token by signing it, 24hr expiry
     const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
-    
+
     // token now rests in http cookie
-    res.cookie('token', token, { 
-      httpOnly: true, 
+    res.cookie('token', token, {
+      httpOnly: true,
       // uses the secure flag http(S) if hosting it normally (not on localhost)
       secure: process.env.NODE_ENV === 'production',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours cookie lifetime
@@ -234,10 +245,10 @@ app.post('/api/login', async (req, res) => {
 
     // dont need to include token in response, lives in cookie
     res.json({ message: 'Login successful', user: { id: user.id, email: user.email, role: user.role, name: user.name } });
-    } catch (err) {
-      console.error('Login error FULL:', err.message, err.stack);
-      res.status(500).json({ error: 'Failed to login' });
-    }
+  } catch (err) {
+    console.error('Login error FULL:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to login' });
+  }
 });
 
 // logout to destroy cookie
@@ -284,10 +295,18 @@ app.post('/api/decks', async (req, res) => {
   }
 });
 
-app.get('/api/decks', async (req, res) => {
+// get decks based on active and if invited to view them
+app.get('/api/decks', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM decks WHERE status = 'active' ORDER BY id ASC`
+      `
+      SELECT DISTINCT d.* 
+      FROM decks d
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+      WHERE d.status = 'active' AND (d.user_id = $1 OR sda.user_id = $1)
+      ORDER BY d.id ASC
+      `,
+      [req.user.id]
     );
 
     res.json(result.rows);
@@ -364,6 +383,60 @@ app.patch('/api/decks/:deckId', async (req, res) => {
   } catch (err) {
     console.error('Edit deck error:', err);
     res.status(500).json({ error: 'Failed to edit deck' });
+  }
+});
+
+// create invite code for a deck
+// code becomes invalid after 24hrs or if refreshed
+app.post('/api/decks/:deckId/invite', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+
+    if (req.user.role !== 'TEACH') {
+      return res.status(403).json({ error: 'Only teachers are permitted to generate invite codes.' });
+    }
+
+    // whoami (just ownership though lol)
+    const deckCheck = await pool.query(`SELECT id FROM decks WHERE id = $1 AND user_id = $2`, [deckId, req.user.id]);
+    if (deckCheck.rows.length === 0) return res.status(403).json({ error: 'Deck not owned' });
+
+    // 6 char code just using random fx
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    const result = await pool.query(
+      `UPDATE decks SET invite_code = $1, invite_expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours' WHERE id = $2 RETURNING invite_code, invite_expires_at`,
+      [code, deckId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Generate invite error:', err);
+    res.status(500).json({ error: 'Failed to generate invite code' });
+  }
+});
+
+// use invite code to join a deck
+app.post('/api/decks/join', authenticateToken, async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Code is required' });
+
+    const deckResult = await pool.query(
+      `SELECT id FROM decks WHERE invite_code = $1 AND invite_expires_at > CURRENT_TIMESTAMP`,
+      [code.toUpperCase()]
+    );
+
+    if (deckResult.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired code' });
+    const deckId = deckResult.rows[0].id;
+
+    await pool.query(
+      `INSERT INTO shared_deck_access (user_id, deck_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [req.user.id, deckId]
+    );
+
+    res.json({ success: true, message: 'Successfully joined deck', deckId });
+  } catch (err) {
+    console.error('Join deck error:', err);
+    res.status(500).json({ error: 'Failed to join deck' });
   }
 });
 
@@ -488,8 +561,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
     const { cards } = req.body;
     // imported array
     if (!cards || !Array.isArray(cards)) {
-      return res.status(400).json({ 
-        error: 'cards array is required' 
+      return res.status(400).json({
+        error: 'cards array is required'
       });
     }
 
@@ -500,8 +573,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'Deck not found or not owned' 
+      return res.status(404).json({
+        error: 'Deck not found or not owned'
       });
     }
 
@@ -526,7 +599,7 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
         [deckId, card.front, card.back]
       );
     }
-    
+
     // update deck timestamp
     await pool.query(
       `UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
@@ -538,8 +611,8 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
   } catch (err) {
     await pool.query('ROLLBACK');
     console.error('Import deck error:', err);
-    res.status(500).json({ 
-      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck' 
+    res.status(500).json({
+      error: err.message === 'Invalid card payload. Missing front or back.' ? err.message : 'Failed to import deck'
     });
   }
 });
@@ -679,14 +752,19 @@ app.get('/api/decks/:deckId/quizzes', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
 
-    // fix: check ownership before returning
+    // fix: check ownership or joined status before returning
     const deckResult = await pool.query(
-      `SELECT id FROM decks WHERE id = $1 AND user_id = $2`,
+      `
+      SELECT d.id 
+      FROM decks d 
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id 
+      WHERE d.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
       [deckId, req.user.id]
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(403).json({ error: 'Deck not owned' });
+      return res.status(403).json({ error: 'No access to this deck' });
     }
 
 
@@ -707,14 +785,20 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   try {
     const { quizId } = req.params;
 
-    //fix: join decks again
+    //fix: join decks again and evaluate read access
     const quizResult = await pool.query(
-      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      `
+      SELECT q.* 
+      FROM quizzes q 
+      JOIN decks d ON q.deck_id = d.id 
+      LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id 
+      WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)
+      `,
       [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found' });
+      return res.status(404).json({ error: 'Quiz not found or unaccessible' });
     }
 
     const questionsResult = await pool.query(
@@ -816,6 +900,7 @@ app.get('/api/my-quiz-attempts', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch quiz attempts' });
   }
 });
+<<<<<<< HEAD
 app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res) => {
   const { deckId } =req.params;
   const {mode, count}= req.body;
@@ -869,6 +954,58 @@ app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res)
   }
   res.status(201).json(quizDat);
 });
+=======
+
+// leaderboard from scores only included top 5 plus whichever user logged in
+// score is defined as EACH attempts percent correct added onto each other
+// leaderboard from scores - teachers see all and emails, students see top 5 + themselves
+app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) => {
+  try {
+    const deckId = Number(req.params.deckId);
+
+  if (!Number.isInteger(deckId)) {
+    return res.status(400).json({ error: 'Invalid deck id' });
+}
+    const isTeacher = req.user.role === 'TEACH';
+
+    const query = `
+      WITH user_points AS (
+        SELECT 
+          u.id AS user_id,
+          u.name AS user_name,
+          ${isTeacher ? 'u.email AS user_email,' : ''}
+          SUM(COALESCE(ROUND((qa.score::numeric / NULLIF(qa.total_questions, 0)) * 1000), 0)) AS total_deck_points
+        FROM quiz_attempts qa
+        JOIN quizzes q ON qa.quiz_id = q.id
+        JOIN users u ON qa.user_id = u.id
+        WHERE q.deck_id = $1
+        GROUP BY u.id, u.name${isTeacher ? ', u.email' : ''}
+      ),
+      ranked_points AS (
+        SELECT 
+          user_id,
+          user_name,
+          ${isTeacher ? 'user_email,' : ''}
+          total_deck_points,
+          RANK() OVER (ORDER BY total_deck_points DESC) as rank
+        FROM user_points
+      )
+      SELECT * FROM ranked_points 
+      ${isTeacher ? '' : 'WHERE rank <= 5 OR user_id = $2'}
+      ORDER BY rank ASC, total_deck_points DESC, user_name ASC;
+    `;
+
+    const params = isTeacher ? [deckId] : [deckId, req.user.id];
+    const result = await pool.query(query, params);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get deck leaderboard error:', err);
+    res.status(500).json({ error: 'Failed to fetch deck leaderboard' });
+  }
+});
+
+>>>>>>> origin/main
 //allows for express and server to wait for client requests on the selected port
 app.listen(port, () => {
   console.log(`StudyStrike running on http://localhost:${port}`);
