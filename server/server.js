@@ -86,6 +86,19 @@ app.get('/api/init-db', async (req, res) => {
         PRIMARY KEY (user_id, deck_id)
       );
     `);
+    // new table just for minigame attempts to bring it for leaderboard calculations
+    // takes both attempts / time spent
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minigame_attempts (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        moves INTEGER NOT NULL,
+        time_elapsed_ms INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS flashcards (
@@ -821,6 +834,35 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
   }
 });
 
+// submitting minigame route
+app.post('/api/decks/:deckId/minigame/submit', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const { moves, timeElapsed } = req.body;
+
+    if (moves == null || timeElapsed == null) {
+      return res.status(400).json({ error: 'moves and timeElapsed are required' });
+    }
+
+    const attemptResult = await pool.query(
+      `
+      INSERT INTO minigame_attempts (deck_id, user_id, moves, time_elapsed_ms)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *;
+      `,
+      [deckId, req.user.id, moves, timeElapsed]
+    );
+
+    res.json({
+      message: 'Minigame submitted successfully',
+      attempt: attemptResult.rows[0]
+    });
+  } catch (err) {
+    console.error('Submit minigame error:', err);
+    res.status(500).json({ error: 'Failed to submit minigame' });
+  }
+});
+
 // submitting quiz route
 app.post('/api/quizzes/:quizId/submit', authenticateToken, async (req, res) => {
   try {
@@ -913,27 +955,38 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
 }
     const isTeacher = req.user.role === 'TEACH';
 
+    // new leaderboard query factors in the ma (minigame attempts) and original quiz information as well as the time spent in the minigame to factor the score
     const query = `
-      WITH user_points AS (
+      WITH all_points AS (
         SELECT 
-          u.id AS user_id,
-          u.name AS user_name,
-          ${isTeacher ? 'u.email AS user_email,' : ''}
-          SUM(COALESCE(ROUND((qa.score::numeric / NULLIF(qa.total_questions, 0)) * 1000), 0)) AS total_deck_points
+          qa.user_id,
+          CAST(ROUND((qa.score::numeric / NULLIF(qa.total_questions, 0)) * 1000) AS INTEGER) AS points
         FROM quiz_attempts qa
         JOIN quizzes q ON qa.quiz_id = q.id
-        JOIN users u ON qa.user_id = u.id
         WHERE q.deck_id = $1
-        GROUP BY u.id, u.name${isTeacher ? ', u.email' : ''}
+        UNION ALL
+        SELECT 
+          ma.user_id,
+          CAST(GREATEST(COALESCE(ROUND((8.0 / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
+        FROM minigame_attempts ma
+        WHERE ma.deck_id = $1
+      ),
+      user_totals AS (
+        SELECT 
+          ap.user_id,
+          SUM(COALESCE(ap.points, 0)) AS total_deck_points
+        FROM all_points ap
+        GROUP BY ap.user_id
       ),
       ranked_points AS (
         SELECT 
-          user_id,
-          user_name,
-          ${isTeacher ? 'user_email,' : ''}
-          total_deck_points,
-          RANK() OVER (ORDER BY total_deck_points DESC) as rank
-        FROM user_points
+          ut.user_id,
+          u.name AS user_name,
+          ${isTeacher ? 'u.email AS user_email,' : ''}
+          ut.total_deck_points,
+          RANK() OVER (ORDER BY ut.total_deck_points DESC) as rank
+        FROM user_totals ut
+        JOIN users u ON ut.user_id = u.id
       )
       SELECT * FROM ranked_points 
       ${isTeacher ? '' : 'WHERE rank <= 5 OR user_id = $2'}
