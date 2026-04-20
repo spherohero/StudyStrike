@@ -14,7 +14,8 @@ To test project:
     3. npm install (if first time)
     4. npm run dev
     5. Visit http://localhost:3000/
-    6. Done!
+    6. Set up either student or teacher account
+    7. Done!
 
 Happy Studying!
 
