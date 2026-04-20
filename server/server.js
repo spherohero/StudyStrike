@@ -339,29 +339,62 @@ app.get('/api/decks', authenticateToken, async (req, res) => {
 });
 
 //delete function for decks (so now it matches card deletion)
-app.delete('/api/decks/:deckId', async (req, res) => {
+app.delete('/api/decks/:deckId', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
 
-    const result = await pool.query(
-      `
-      UPDATE decks 
-      SET status = 'deleted', updated_at = CURRENT_TIMESTAMP 
-      WHERE id = $1 
-      RETURNING *;
-      `,
+    // Check if user owns the deck
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1`,
       [deckId]
     );
 
-    if (result.rows.length === 0) {
+    if (deckResult.rows.length === 0) {
       return res.status(404).json({ error: 'Deck not found' });
     }
 
-    res.json({
-      success: true,
-      message: 'Deck soft-deleted successfully',
-      deck: result.rows[0]
-    });
+    const deck = deckResult.rows[0];
+
+    if (deck.user_id === req.user.id) {
+      // OWNER: Soft-delete the entire deck
+      const result = await pool.query(
+        `
+        UPDATE decks 
+        SET status = 'deleted', updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $1 
+        RETURNING *;
+        `,
+        [deckId]
+      );
+
+      // Also remove all shared access
+      await pool.query(
+        `DELETE FROM shared_deck_access WHERE deck_id = $1`,
+        [deckId]
+      );
+
+      res.json({
+        success: true,
+        message: 'Deck deleted successfully',
+        deck: result.rows[0]
+      });
+    } else {
+      // guest acccess: remove visibility and access per user basis
+      const result = await pool.query(
+        `
+        DELETE FROM shared_deck_access 
+        WHERE user_id = $1 AND deck_id = $2
+        RETURNING *;
+        `,
+        [req.user.id, deckId]
+      );
+
+      res.json({
+        success: true,
+        message: 'Access removed successfully',
+        removed: result.rows.length > 0
+      });
+    }
   } catch (err) {
     console.error('Delete deck error:', err);
     res.status(500).json({ error: 'Failed to delete deck' });
