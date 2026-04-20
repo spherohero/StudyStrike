@@ -13,3 +13,6 @@ To test project:
     4. npm run dev
     5. Visit http://localhost:3000/
     6. Done!
+
+Happy Studying!
+
