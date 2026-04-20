@@ -4,7 +4,7 @@ import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
 import QuizSetupModal from "./QuizSetupModal.jsx";
 const DECKS_PER_PAGE = 6;
-function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz}){
+function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz, onShare}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
@@ -53,6 +53,12 @@ function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz}){
           className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200 transition"
         >
           Export
+        </button>
+        <button
+          onClick={() => onShare(deck.id)}
+          className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-200 transition"
+        >
+          Share
         </button>
         <button
           onClick={() => onDelete(deck.id)}
@@ -150,6 +156,11 @@ export default function Dashboard() {
   const [quizModal, setQuizModal] = useState(null);
   const [quizMode, setQuizMode] = useState(null);
   const [quizCount, setQuizCount] = useState(20);
+  const [shareModal, setShareModal] = useState(null);
+  const [shareCode, setShareCode] = useState("");
+  const [shareExpires, setShareExpires] = useState("");
+  const [joinModal, setJoinModal] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
   useEffect(() => {
     fetchDecks();
   }, []);
@@ -160,9 +171,8 @@ export default function Dashboard() {
       const res = await fetch("/api/decks", {credentials: "include" });
       const data = await res.json();
       if (res.ok) {
-        // Filter to only show user's own decks
-        const myDecks = data.filter((d) => d.user_id === user?.id);
-        setDecks(myDecks);
+        // Show all decks (owned + shared via invite)
+        setDecks(data);
       } else {
         setError(data.error || "Failed to load decks");
       }
@@ -198,9 +208,40 @@ export default function Dashboard() {
   }
 
   async function handleDelete(deckId) {
-    if (!confirm("Delete this deck and all its cards?")) return;
-    // Optimistic remove for now. Add a backend delete route later if needed.
-    setDecks(decks.filter((d) => d.id !== deckId));
+    const deckToDelete = decks.find(d => d.id === deckId);
+    const isOwner = deckToDelete && deckToDelete.user_id === user?.id;
+    
+    // differentiate owner and shared access user deletion actions
+    // owner deletes: hard removal from all users
+    // guest delete: only removes their own personal access/visibility
+    const confirmMsg = isOwner 
+      ? "Delete this deck and all its cards? This will remove it for everyone."
+      : "Remove your access to this deck?";
+      
+    if (!confirm(confirmMsg)) return;
+    
+    try {
+      const res = await fetch(`/api/decks/${deckId}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        if (isOwner) {
+          // Owner deleted the deck - remove from list
+          setDecks(decks.filter(d => d.id !== deckId));
+        } else {
+          // Non-owner removed their access - remove from list
+          setDecks(decks.filter(d => d.id !== deckId));
+        }
+        alert(data.message || "Success");
+      } else {
+        alert(data.error || "Failed to delete");
+      }
+    } catch (err) {
+      alert("Network error");
+    }
   }
 
   async function handleDuplicate(deckId) {
@@ -214,7 +255,51 @@ export default function Dashboard() {
       // silently fail
     }
   }
-function handleQuiz(deckId) {
+  // front end implementation of a share button
+  async function handleShare(deckId) {
+    try {
+      const res = await fetch(`/api/decks/${deckId}/invite`, {
+        method: "POST",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setShareModal(deckId);
+        setShareCode(data.invite_code);
+        setShareExpires(data.invite_expires_at);
+      } else {
+        alert(data.error || "Failed to generate invite code");
+      }
+    } catch {
+      alert("Network error");
+    }
+  }
+  async function handleJoinDeck() {
+    if (!inviteCode.trim()) {
+      alert("Please enter an invite code");
+      return;
+    }
+    try {
+      const res = await fetch("/api/decks/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ code: inviteCode.toUpperCase() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Successfully joined deck!");
+        setJoinModal(false);
+        setInviteCode("");
+        fetchDecks(); // Refresh deck list
+      } else {
+        alert(data.error || "Failed to join deck");
+      }
+    } catch {
+      alert("Network error");
+    }
+  }
+  function handleQuiz(deckId) {
   setQuizMode(null);
   setQuizModal(deckId);
 }
@@ -313,6 +398,12 @@ async function handleGenerateQuiz(mode, count) {
           >
             Import Deck
           </button>
+          <button
+            onClick={() => setJoinModal(true)}
+            className="bg-white/90 text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
+          >
+            Join Deck
+          </button>
         </div>
       </div>
 
@@ -350,6 +441,7 @@ async function handleGenerateQuiz(mode, count) {
                 onDuplicate={handleDuplicate}
                 onExport={handleExport}
                 onQuiz={handleQuiz}
+                onShare={handleShare}
               />
             ))}
           </div>
@@ -445,7 +537,70 @@ async function handleGenerateQuiz(mode, count) {
     <QuizSetupModal
       deckId={quizModal}
       onClose={() =>setQuizModal(null)}
+      // share page below to show 6 char alphanumeric code for TEACHERS role to use only
+      // as well as JOIN page for invite codes for all roles
       onStart={(mode, count) =>handleGenerateQuiz(mode, count)}/>)}
+    {joinModal && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <h3 className="text-xl font-bold mb-4">Join Deck</h3>
+          <p className="text-gray-600 mb-4">Enter the 6-character invite code to join a shared deck:</p>
+          <input
+            type="text"
+            placeholder="Enter invite code"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value)}
+            className="w-full border rounded-xl px-4 py-3 mb-4 text-sm outline-none focus:border-[#9D6381]"
+            maxLength={6}
+          />
+          <div className="flex gap-3">
+            <button
+              onClick={handleJoinDeck}
+              className="flex-1 bg-[#9D6381] text-white py-3 rounded-xl text-sm font-medium hover:bg-[#8a5270] transition"
+            >
+              Join Deck
+            </button>
+            <button
+              onClick={() => setJoinModal(false)}
+              className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {shareModal && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <h3 className="text-xl font-bold mb-4">Share Deck</h3>
+          <p className="text-gray-600 mb-4">Share this deck with students using the invite code below:</p>
+          <div className="bg-gray-100 rounded-xl p-4 mb-4">
+            <p className="text-sm text-gray-500 mb-1">Invite Code</p>
+            <p className="text-2xl font-mono font-bold text-[#9D6381]">{shareCode}</p>
+            <p className="text-xs text-gray-400 mt-2">Expires: {new Date(shareExpires).toLocaleString()}</p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(shareCode);
+                alert("Code copied to clipboard!");
+                setShareModal(null);
+              }}
+              className="flex-1 bg-[#9D6381] text-white py-3 rounded-xl text-sm font-medium hover:bg-[#8a5270] transition"
+            >
+              Copy Code
+            </button>
+            <button
+              onClick={() => setShareModal(null)}
+              className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 }

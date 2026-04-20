@@ -1,11 +1,21 @@
 # StudyStrike
 CEN3031 Spring 2026 Team Project
 
+Team: The Commits
 
-To test database connection:
+- Fiona Chen
+- Kalea Thompson
+- Parth Patel
+- Nicholas Reyes
+
+To test project:
     1. Navigate to server directory
     2. Make .env in server directory
     3. npm install (if first time)
     4. npm run dev
-    5. Visit http://localhost:3000/db-test
-    6. Done!
+    5. Visit http://localhost:3000/
+    6. Set up either student or teacher account
+    7. Done!
+
+Happy Studying!
+
