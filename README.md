@@ -1,6 +1,10 @@
 # StudyStrike
 CEN3031 Spring 2026 Team Project
 
+- Fiona Chen
+- Kalea Thompson
+- Parth Patel
+- Nicholas Reyes
 
 To test project:
     1. Navigate to server directory
