@@ -159,6 +159,8 @@ export default function Dashboard() {
   const [shareModal, setShareModal] = useState(null);
   const [shareCode, setShareCode] = useState("");
   const [shareExpires, setShareExpires] = useState("");
+  const [joinModal, setJoinModal] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
   useEffect(() => {
     fetchDecks();
   }, []);
@@ -272,6 +274,31 @@ export default function Dashboard() {
       alert("Network error");
     }
   }
+  async function handleJoinDeck() {
+    if (!inviteCode.trim()) {
+      alert("Please enter an invite code");
+      return;
+    }
+    try {
+      const res = await fetch("/api/decks/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ code: inviteCode.toUpperCase() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Successfully joined deck!");
+        setJoinModal(false);
+        setInviteCode("");
+        fetchDecks(); // Refresh deck list
+      } else {
+        alert(data.error || "Failed to join deck");
+      }
+    } catch {
+      alert("Network error");
+    }
+  }
   function handleQuiz(deckId) {
   setQuizMode(null);
   setQuizModal(deckId);
@@ -370,6 +397,12 @@ async function handleGenerateQuiz(mode, count) {
             className="bg-white/90 text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
           >
             Import Deck
+          </button>
+          <button
+            onClick={() => setJoinModal(true)}
+            className="bg-white/90 text-[#9D6381] font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition"
+          >
+            Join Deck
           </button>
         </div>
       </div>
@@ -505,7 +538,38 @@ async function handleGenerateQuiz(mode, count) {
       deckId={quizModal}
       onClose={() =>setQuizModal(null)}
       // share page below to show 6 char alphanumeric code for TEACHERS role to use only
+      // as well as JOIN page for invite codes for all roles
       onStart={(mode, count) =>handleGenerateQuiz(mode, count)}/>)}
+    {joinModal && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <h3 className="text-xl font-bold mb-4">Join Deck</h3>
+          <p className="text-gray-600 mb-4">Enter the 6-character invite code to join a shared deck:</p>
+          <input
+            type="text"
+            placeholder="Enter invite code"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value)}
+            className="w-full border rounded-xl px-4 py-3 mb-4 text-sm outline-none focus:border-[#9D6381]"
+            maxLength={6}
+          />
+          <div className="flex gap-3">
+            <button
+              onClick={handleJoinDeck}
+              className="flex-1 bg-[#9D6381] text-white py-3 rounded-xl text-sm font-medium hover:bg-[#8a5270] transition"
+            >
+              Join Deck
+            </button>
+            <button
+              onClick={() => setJoinModal(false)}
+              className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {shareModal && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
         <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
