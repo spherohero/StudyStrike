@@ -187,24 +187,22 @@ app.get('/api/columns/:table', async (req, res) => {
 // user authentication
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const authenticateToken = (req, res, next) => {
-  // get token securely from cookie
-  // used instead of header as cookie sent over http
-  const token = req.cookies.token;
+// Middleware to authenticate JWT token from cookies
+async function authenticateToken(req, res, next) {
+  const token = req.cookies?.token;
 
   // no token
   if (!token) {
     return res.status(401).json({ error: 'Access denied' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    // fail verification token
-    if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
+  try {
+    const user = jwt.verify(token, JWT_SECRET);
     req.user = user;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid token' });
+  }
 };
 
 //signups
@@ -672,9 +670,10 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/decks/:id/duplicate', async (req, res) => {
+app.post('/api/decks/:id/duplicate', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
 
     const originalDeckResult = await pool.query(
       `SELECT * FROM decks WHERE id = $1`,
@@ -687,14 +686,31 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
 
     const originalDeck = originalDeckResult.rows[0];
 
+    // Check if user owns the deck or has access via sharing
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM shared_deck_access WHERE user_id = $1 AND deck_id = $2`,
+      [userId, id]
+    );
+
+    const hasAccess = originalDeck.user_id === userId || accessCheck.rows.length > 0;
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this deck' });
+    }
+
+    // Determine target user_id for the new deck
+    // If owner: duplicate to same user (owner keeps ownership)
+    // If non-owner: duplicate to the requesting user (new deck for them)
+    const targetUserId = originalDeck.user_id === userId ? userId : userId;
+
     const newDeckResult = await pool.query(
       `
-      INSERT INTO decks (user_id, title, description)
-      VALUES ($1, $2, $3)
+      INSERT INTO decks (user_id, title, description, status)
+      VALUES ($1, $2, $3, 'active')
       RETURNING *;
       `,
       [
-        originalDeck.user_id,
+        targetUserId,
         `${originalDeck.title} (Copy)`,
         originalDeck.description
       ]
@@ -702,6 +718,7 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
 
     const newDeck = newDeckResult.rows[0];
 
+    // Copy flashcards only (no quiz/leaderboard history for non-owners)
     const cardsResult = await pool.query(
       `SELECT * FROM flashcards WHERE deck_id = $1`,
       [id]
@@ -717,6 +734,9 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
       );
     }
 
+    // For non-owners: do NOT copy quizzes, minigame_attempts, or study-time
+    // This creates a fresh deck with only flashcards
+
     res.status(201).json({
       success: true,
       message: 'Deck duplicated successfully',
@@ -725,6 +745,64 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
   } catch (err) {
     console.error('Duplicate deck error:', err);
     res.status(500).json({ error: 'Failed to duplicate deck' });
+  }
+});
+
+// Export deck as CSV
+app.get('/api/decks/:deckId/export', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const userId = req.user.id;
+
+    // Check if user owns or has access to the deck
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1`,
+      [deckId]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    const deck = deckResult.rows[0];
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM shared_deck_access WHERE user_id = $1 AND deck_id = $2`,
+      [userId, deckId]
+    );
+
+    const hasAccess = deck.user_id === userId || accessCheck.rows.length > 0;
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this deck' });
+    }
+
+    // Get all flashcards for this deck
+    const cardsResult = await pool.query(
+      `SELECT front, back FROM flashcards WHERE deck_id = $1`,
+      [deckId]
+    );
+
+    // Generate CSV content
+    const csvRows = [['Front', 'Back']];
+    for (const card of cardsResult.rows) {
+      csvRows.push([card.front, card.back]);
+    }
+
+    const csvContent = csvRows
+      .map(row => row.join(','))
+      .join('\n');
+
+    // Set headers for file download
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${deck.title}.csv"`
+    );
+
+    res.send(csvContent);
+  } catch (err) {
+    console.error('Export deck error:', err);
+    res.status(500).json({ error: 'Failed to export deck' });
   }
 });
 

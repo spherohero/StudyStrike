@@ -84,19 +84,19 @@ export default function Dashboard() {
   async function handleExport(deckId) {
     try {
       const res = await fetch(`/api/decks/${deckId}/export`);
-      const data = await res.json();
       if (res.ok) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        // Server returns CSV directly
+        const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const safeTitle = (data.title || `deck_${deckId}`).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${safeTitle}.json`;
+        a.download = `deck_${deckId}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } else {
+        const data = await res.json();
         alert(data.error || 'Failed to export deck');
       }
     } catch {
