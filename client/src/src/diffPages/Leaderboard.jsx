@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
 const boardConfetiColors = [
   "#9D6381", "#E8735A", "#f6d860", "#7ec8e3",
@@ -72,8 +73,7 @@ function TopCard({ user, config, rank }) {
   if (config.bobAnim) crownAnimStr= "crownBob 2.2s ease-in-out infinite";
   let nameLtr ="?";
   if (user.name) nameLtr = user.name[0].toUpperCase();
-  let dayStr = "days";
-  if (user.days === 1) dayStr= "day";
+  let dayStr = user.isPoints ? "pts" : (user.days === 1 ? "day" : "days");
   return (
     <div
       className="relative flex-1 overflow-hidden bg-white rounded-2xl flex flex-col items-center gap-2 pt-5 pb-4 px-3"
@@ -115,15 +115,28 @@ function TopCard({ user, config, rank }) {
   );
 }
 export default function Leaderboard() {
+  const { deckId } = useParams();
   const [leaderboard, setLeaderboard]= useState([]);
   const [loading, setLoading] = useState(true);
   //runs on mount fetches the leaderboard
   useEffect(() => {
     //fetches leaderboard data on laod
     setLoading(true);
-    fetch("/api/leaderboard", { credentials:"include" })
+    const endpoint = deckId ? `/api/decks/${deckId}/leaderboard` : "/api/leaderboard";
+    fetch(endpoint, { credentials:"include" })
       .then((resObj) => resObj.json())
-      .then((datBuff) => setLeaderboard(datBuff))
+      .then((datBuff) => {
+        if (deckId && Array.isArray(datBuff)) {
+          setLeaderboard(datBuff.map(u => ({
+            rank: u.rank,
+            name: u.user_name,
+            days: u.total_deck_points,
+            isPoints: true
+          })));
+        } else {
+          setLeaderboard(datBuff);
+        }
+      })
       .catch(() =>
         //fallbak data if api fails
         setLeaderboard([
@@ -135,7 +148,7 @@ export default function Leaderboard() {
         ])
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [deckId]);
   //top 3 get the podium cards evryone else goes in the list
   const top3= leaderboard.slice(0, 3);
   const belowTop = leaderboard.slice(3);
@@ -145,8 +158,8 @@ export default function Leaderboard() {
       <main className="flex flex-1 justify-center px-4 py-10">
         <div className="w-full max-w-xl flex flex-col gap-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">Leaderboard</h1>
-            <p className="text-sm text-gray-400 mt-1">Ranked by study streak</p>
+            <h1 className="text-2xl font-bold text-gray-800">{deckId ? "Deck Leaderboard" : "Leaderboard"}</h1>
+            <p className="text-sm text-gray-400 mt-1">{deckId ? "Ranked by points" : "Ranked by study streak"}</p>
           </div>
           {loading && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 flex items-center justify-center text-gray-400 text-sm">
@@ -170,8 +183,7 @@ export default function Leaderboard() {
             //rest of the list below top 3
             <div className="flex flex-col gap-3">
               {belowTop.map((user, i) => {
-                let dayStr= "days";
-                if (user.days === 1) dayStr = "day";
+                let dayStr= user.isPoints ? "pts" : (user.days === 1 ? "day" : "days");
                 let nameLtr ="?";
                 if (user.name) nameLtr= user.name[0].toUpperCase();
                 return (

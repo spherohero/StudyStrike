@@ -9,7 +9,15 @@ function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz, onShare}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
-        <h3 className="text-lg font-semibold">{deck.title}</h3>
+        <div className="flex justify-between items-start">
+          <h3 className="text-lg font-semibold">{deck.title}</h3>
+          <Link
+            to={`/leaderboard/${deck.id}`}
+            className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md hover:bg-indigo-200 transition font-medium"
+          >
+            Strikers
+          </Link>
+        </div>
         {deck.description && (
           <p className="text-gray-400 text-sm mt-1 line-clamp-2">{deck.description}</p>
         )}

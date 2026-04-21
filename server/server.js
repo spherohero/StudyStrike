@@ -965,7 +965,7 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
 app.post('/api/decks/:deckId/minigame/submit', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
-    const { moves, timeElapsed } = req.body;
+    const { moves, timeElapsed, pairs } = req.body;
 
     if (moves == null || timeElapsed == null) {
       return res.status(400).json({ error: 'moves and timeElapsed are required' });
@@ -973,11 +973,11 @@ app.post('/api/decks/:deckId/minigame/submit', authenticateToken, async (req, re
 
     const attemptResult = await pool.query(
       `
-      INSERT INTO minigame_attempts (deck_id, user_id, moves, time_elapsed_ms)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO minigame_attempts (deck_id, user_id, moves, time_elapsed_ms, pairs)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *;
       `,
-      [deckId, req.user.id, moves, timeElapsed]
+      [deckId, req.user.id, moves, timeElapsed, pairs || 8]
     );
 
     res.json({
@@ -1107,7 +1107,7 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
         UNION ALL
         SELECT 
           ma.user_id,
-          CAST(GREATEST(COALESCE(ROUND((8.0 / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
+          CAST(GREATEST(COALESCE(ROUND((COALESCE(ma.pairs, 8)::numeric / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
         FROM minigame_attempts ma
         WHERE ma.deck_id = $1
 
@@ -1357,6 +1357,7 @@ app.listen(port, async () => {
       ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
       ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_code VARCHAR(6) UNIQUE;
       ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP;
+      ALTER TABLE minigame_attempts ADD COLUMN IF NOT EXISTS pairs INTEGER DEFAULT 8;
     `);
 
     await pool.query(`
@@ -1375,6 +1376,7 @@ app.listen(port, async () => {
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         moves INTEGER NOT NULL,
         time_elapsed_ms INTEGER NOT NULL,
+        pairs INTEGER DEFAULT 8,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);

@@ -38,6 +38,27 @@ export default function MatchingGame() {
   useEffect(() => {
     fetchCards();
   }, [deckId]);
+// post results of minigame directly to the deck leaderboard endpoint
+  useEffect(() => {
+    if (cards.length > 0 && matchedPairs.size === cards.length / 2 && endTime && startTime) {
+      submitGameScore(moves, endTime - startTime, cards.length / 2);
+    }
+  }, [matchedPairs.size, cards.length, endTime, startTime, moves]);
+
+  async function submitGameScore(finalMoves, finalTime, totalPairs) {
+    try {
+      await fetch(`/api/decks/${deckId}/minigame/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ moves: finalMoves, timeElapsed: finalTime, pairs: totalPairs }),
+        credentials: "include"
+      });
+    } catch (err) {
+      console.error("Failed to submit minigame score", err);
+    }
+  }
 
   async function fetchCards() {
     setLoading(true);

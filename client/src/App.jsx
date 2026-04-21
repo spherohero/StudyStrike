@@ -30,6 +30,7 @@ export default function App() {
         <Route path="/create" element={<ProtectedRoute><Create /></ProtectedRoute>} />
         <Route path="/create/:deckId" element={<ProtectedRoute><Create /></ProtectedRoute>} />
         <Route path="/leaderboard" element={<Leaderboard />}/>
+        <Route path="/leaderboard/:deckId" element={<Leaderboard />}/>
         <Route path="/quiz/:quizId" element={<QuizPage />}/>
         <Route path="/quiz-builder/:quizId/:deckId" element={<QuizBuilder />}/>
       </Routes>
