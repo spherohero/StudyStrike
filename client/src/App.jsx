@@ -29,9 +29,9 @@ export default function App() {
         <Route path="/game/:deckId" element={<ProtectedRoute><MatchingGame /></ProtectedRoute>} />
         <Route path="/create" element={<ProtectedRoute><Create /></ProtectedRoute>} />
         <Route path="/create/:deckId" element={<ProtectedRoute><Create /></ProtectedRoute>} />
-        <Route path="/leaderboard" element={<Leaderboard />}/>
         <Route path="/quiz/:quizId" element={<QuizPage />}/>
         <Route path="/quiz-builder/:quizId/:deckId" element={<QuizBuilder />}/>
+        <Route path="/leaderboard/:deckId" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

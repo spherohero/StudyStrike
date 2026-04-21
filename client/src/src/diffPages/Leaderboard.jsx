@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import Navbar from "../components/Navbar.jsx";
 const boardConfetiColors = [
   "#9D6381", "#E8735A", "#f6d860", "#7ec8e3",
@@ -72,8 +73,8 @@ function TopCard({ user, config, rank }) {
   if (config.bobAnim) crownAnimStr= "crownBob 2.2s ease-in-out infinite";
   let nameLtr ="?";
   if (user.name) nameLtr = user.name[0].toUpperCase();
-  let dayStr = "days";
-  if (user.days === 1) dayStr= "day";
+  let dayStr ="points";
+  if (user.points === 1) dayStr= "point";
   return (
     <div
       className="relative flex-1 overflow-hidden bg-white rounded-2xl flex flex-col items-center gap-2 pt-5 pb-4 px-3"
@@ -103,7 +104,7 @@ function TopCard({ user, config, rank }) {
       </div>
       <span className="text-sm font-medium text-gray-800 z-10">{user.name}</span>
       <span className="text-sm font-medium z-10" style={{ color:"#9D6381" }}>
-        🔥 {user.days} {dayStr}
+        🔥 {user.days} points
       </span>
       <style>{`
         @keyframes crownBob {
@@ -115,27 +116,23 @@ function TopCard({ user, config, rank }) {
   );
 }
 export default function Leaderboard() {
+  const { deckId } =useParams();
   const [leaderboard, setLeaderboard]= useState([]);
   const [loading, setLoading] = useState(true);
   //runs on mount fetches the leaderboard
   useEffect(() => {
-    //fetches leaderboard data on laod
-    setLoading(true);
-    fetch("/api/leaderboard", { credentials:"include" })
-      .then((resObj) => resObj.json())
-      .then((datBuff) => setLeaderboard(datBuff))
-      .catch(() =>
-        //fallbak data if api fails
-        setLeaderboard([
-          { rank: 1, name:"Sarah", days: 10 },
-          { rank: 2, name: "James", days: 9 },
-          { rank: 3, name:"Alex", days: 5 },
-          { rank: 4, name: "Maria", days: 4 },
-          { rank: 5, name:"Chris", days: 3 },
-        ])
-      )
-      .finally(() => setLoading(false));
-  }, []);
+  //fetches leaderboard for this deck
+  setLoading(true);
+  fetch(`/api/decks/${deckId}/leaderboard`, { credentials:"include" })
+    .then((resObj) => resObj.json())
+    .then((datBuff) => setLeaderboard(datBuff.map(r => ({
+      rank: r.rank,
+      name: r.user_name,
+      days: r.total_deck_points
+    }))))
+    .catch(()=> setLeaderboard([]))
+    .finally(() =>setLoading(false));
+}, [deckId]);
   //top 3 get the podium cards evryone else goes in the list
   const top3= leaderboard.slice(0, 3);
   const belowTop = leaderboard.slice(3);
@@ -146,7 +143,7 @@ export default function Leaderboard() {
         <div className="w-full max-w-xl flex flex-col gap-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Leaderboard</h1>
-            <p className="text-sm text-gray-400 mt-1">Ranked by study streak</p>
+            <p className="text-sm text-gray-400 mt-1">Ranked by points</p>
           </div>
           {loading && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 flex items-center justify-center text-gray-400 text-sm">
@@ -170,8 +167,8 @@ export default function Leaderboard() {
             //rest of the list below top 3
             <div className="flex flex-col gap-3">
               {belowTop.map((user, i) => {
-                let dayStr= "days";
-                if (user.days === 1) dayStr = "day";
+                let dayStr= "points";
+                if (user.points === 1) dayStr = "point";
                 let nameLtr ="?";
                 if (user.name) nameLtr= user.name[0].toUpperCase();
                 return (
@@ -191,7 +188,7 @@ export default function Leaderboard() {
                     <span className="flex-1 text-sm font-medium text-gray-600">{user.name}</span>
                     <div className="flex items-center gap-1.5 text-sm text-gray-500">
                     <span>🔥</span>
-                    <span>{user.days} {dayStr}</span>
+                    <span>{user.days} points</span>
                     </div>
                   </div>
                 );

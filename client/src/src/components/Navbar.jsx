@@ -23,7 +23,6 @@ export default function Navbar({ activePage }) {
             <Link to="/study" className={activePage === "study" ? "underline font-semibold" : "hover:underline"}>Study</Link>
             <Link to="/create" className={activePage === "create" ? "underline font-semibold" : "hover:underline"}>Create</Link>
             <Link to="/dashboard" className={activePage === "quiz" ? "underline font-semibold" : "hover:underline"}>Quiz</Link>
-            <Link to="/leaderboard" className={activePage === "leaderboard" ? "underline font-semibold" : "hover:underline"}>Leaderboard</Link>
           </>
         )}
       </nav>
