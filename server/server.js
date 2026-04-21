@@ -815,14 +815,17 @@ app.post('/api/quizzes', authenticateToken, async (req, res) => {
     if (!deck_id || !title) {
       return res.status(400).json({ error: 'deck_id and title are required' });
     }
-    //user_id check here for ownership
+    // Check if user owns the deck OR has shared access
     const deckResult = await pool.query(
-      `SELECT * FROM decks WHERE id = $1 AND status = 'active' AND user_id = $2`,
+      `SELECT d.* FROM decks d
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id AND sda.user_id = $2
+       WHERE d.id = $1 AND d.status = 'active'
+       AND (d.user_id = $2 OR sda.user_id = $2)`,
       [deck_id, req.user.id]
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Deck not found or not owned' });
+      return res.status(404).json({ error: 'Deck not found or no access' });
     }
 
     const result = await pool.query(
@@ -855,14 +858,17 @@ app.post('/api/quizzes/:quizId/questions', authenticateToken, async (req, res) =
     if (!validOptions.includes(correct_option)) {
       return res.status(400).json({ error: 'correct_option must be A, B, C, or D' });
     }
-    // fix: JOIN decks verify ownership
+    // fix: JOIN decks verify ownership OR shared access
     const quizResult = await pool.query(
-      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      `SELECT q.* FROM quizzes q 
+       JOIN decks d ON q.deck_id = d.id
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+       WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)`,
       [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found or not owned' });
+      return res.status(404).json({ error: 'Quiz not found or no access' });
     }
 
     const result = await pool.query(
@@ -992,6 +998,19 @@ app.post('/api/quizzes/:quizId/submit', authenticateToken, async (req, res) => {
 
     if (!answers || !Array.isArray(answers)) {
       return res.status(400).json({ error: 'answers array is required' });
+    }
+
+    // Check if user has access to the quiz's deck
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM quizzes q
+       JOIN decks d ON q.deck_id = d.id
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+       WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)`,
+      [quizId, req.user.id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Quiz not found or no access' });
     }
 
     const questionsResult = await pool.query(
@@ -1132,14 +1151,19 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
 });
 
 app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res) => {
-  const { deckId } =req.params;
-  const {mode, count}= req.body;
-  const deckRes= await pool.query(
-    `SELECT * FROM decks WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+  const { deckId } = req.params;
+  const { mode, count } = req.body;
+  
+  // Check if user owns deck OR has shared access
+  const deckRes = await pool.query(
+    `SELECT d.* FROM decks d
+     LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+     WHERE d.id = $1 AND d.status = 'active' AND (d.user_id = $2 OR sda.user_id = $2)`,
     [deckId, req.user.id]
   );
-  if (deckRes.rows.length === 0) return res.status(404).json({ error:'Deck not found or not owned' });
-  const deckDat= deckRes.rows[0];
+  
+  if (deckRes.rows.length === 0) return res.status(404).json({ error: 'Deck not found or no access' });
+  const deckDat = deckRes.rows[0];
   const cardsRes = await pool.query(
     `SELECT * FROM flashcards WHERE deck_id = $1`,
     [deckId]
