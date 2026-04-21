@@ -33,6 +33,7 @@ export default function App() {
         <Route path="/leaderboard/:deckId" element={<Leaderboard />}/>
         <Route path="/quiz/:quizId" element={<QuizPage />}/>
         <Route path="/quiz-builder/:quizId/:deckId" element={<QuizBuilder />}/>
+        <Route path="/leaderboard/:deckId" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   );

@@ -103,7 +103,7 @@ function TopCard({ user, config, rank }) {
       </div>
       <span className="text-sm font-medium text-gray-800 z-10">{user.name}</span>
       <span className="text-sm font-medium z-10" style={{ color:"#9D6381" }}>
-        🔥 {user.days} {dayStr}
+        🔥 {user.days} points
       </span>
       <style>{`
         @keyframes crownBob {
@@ -203,7 +203,7 @@ export default function Leaderboard() {
                     <span className="flex-1 text-sm font-medium text-gray-600">{user.name}</span>
                     <div className="flex items-center gap-1.5 text-sm text-gray-500">
                     <span>🔥</span>
-                    <span>{user.days} {dayStr}</span>
+                    <span>{user.days} points</span>
                     </div>
                   </div>
                 );
