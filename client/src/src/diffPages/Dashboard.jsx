@@ -66,8 +66,15 @@ function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz, onShare}){
         >
           Delete
         </button>
+        <Link
+        to={`/leaderboard/${deck.id}`}
+        className="text-sm bg-pink-100 text-pink-700 px-3 py-1 rounded-lg hover:bg-pink-200 transition"
+        >
+        Leaderboard
+      </Link>
       </div>
     </div>
+    
   );
 }
 
