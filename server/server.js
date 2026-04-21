@@ -699,9 +699,10 @@ app.post('/api/decks/:id/duplicate', authenticateToken, async (req, res) => {
     }
 
     // Determine target user_id for the new deck
-    // If owner: duplicate to same user (owner keeps ownership)
-    // If non-owner: duplicate to the requesting user (new deck for them)
-    const targetUserId = originalDeck.user_id === userId ? userId : userId;
+    // If owner duplicates: keep same user_id (owner keeps ownership)
+    // If non-owner duplicates: create new deck for the requesting user
+    const isOwner = originalDeck.user_id === userId;
+    const targetUserId = isOwner ? originalDeck.user_id : userId;
 
     const newDeckResult = await pool.query(
       `
