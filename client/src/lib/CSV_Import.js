@@ -15,7 +15,16 @@ export const importCardsFromCSV = async (file, deckId) => {
       skipEmptyLines: true,
       complete: async (results) => {
         try {
-          const parsedData = results.data;
+          let parsedData = results.data;
+
+          // Ignore the header row if "Front" and "Back" are present
+          if (
+            parsedData.length > 0 &&
+            parsedData[0][0] && parsedData[0][0].trim().toLowerCase() === 'front' &&
+            parsedData[0][1] && parsedData[0][1].trim().toLowerCase() === 'back'
+          ) {
+            parsedData = parsedData.slice(1);
+          }
 
           // term definition -> front back
           // array of strings [term, def]

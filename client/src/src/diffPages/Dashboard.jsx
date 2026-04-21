@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
 import QuizSetupModal from "./QuizSetupModal.jsx";
+import { importCardsFromCSV } from "../../lib/CSV_Import.js";
 const DECKS_PER_PAGE = 6;
 function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz, onShare}){
   return (
@@ -107,36 +108,37 @@ export default function Dashboard() {
   async function handleImport() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.csv';
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (!data.title || !data.cards || !Array.isArray(data.cards)) {
-          alert('Invalid deck file format');
+        const title = file.name.replace(/\.[^/.]+$/, "").replace(/_StudyStrike$/, "").replace(/_/g, " ");
+
+        const res = await fetch("/api/decks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: user.id, title, description: "Imported from CSV" }),
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to create deck for import');
           return;
         }
-        const res = await fetch('/api/decks/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: user.id,
-            title: data.title,
-            description: data.description || '',
-            cards: data.cards
-          }),
-        });
-        const result = await res.json();
-        if (res.ok) {
+
+        const newDeckId = data.id;
+        const importResult = await importCardsFromCSV(file, newDeckId);
+
+        if (importResult.success) {
           fetchDecks(); // Refresh
           alert('Deck imported successfully');
         } else {
-          alert(result.error || 'Failed to import deck');
+          fetchDecks(); // Refresh anyway
+          alert(importResult.error || 'Failed to import cards from CSV');
         }
       } catch {
-        alert('Error reading or parsing file');
+        alert('Error parsing or importing CSV file');
       }
     };
     input.click();
