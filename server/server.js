@@ -1299,9 +1299,104 @@ app.get('/api/decks/:deckId/study-time', authenticateToken, async (req, res) => 
 });
 
 //allows for express and server to wait for client requests on the selected port
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`StudyStrike running on http://localhost:${port}`);
   console.log(`Database test at http://localhost:${port}/db-test`);
+  
+  // database tables on startup
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        pw_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(10) NOT NULL CHECK (role IN ('TEACH', 'STUD')),
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS decks (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT '',
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_code VARCHAR(6) UNIQUE;
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shared_deck_access (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, deck_id)
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minigame_attempts (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        moves INTEGER NOT NULL,
+        time_elapsed_ms INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS flashcards (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        front TEXT NOT NULL,
+        back TEXT NOT NULL
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quizzes (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quiz_questions (
+        id SERIAL PRIMARY KEY,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        correct_answer TEXT NOT NULL,
+        options JSONB NOT NULL
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS study_sessions (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duration_seconds INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('Tables initialized');
+  } catch (err) {
+    console.error('Table initialization failed:', err);
+  }
 });
 
 // included nodemon as a node package to instantly update without restarting server
