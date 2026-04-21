@@ -1150,6 +1150,56 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
   }
 });
 
+// get GLOBAL study streak for users to have a global leaderboard page on header
+// refresh 24hrs based on utc
+
+app.get('/api/leaderboard', authenticateToken, async (req, res) => {
+  try {
+    const query = `
+      WITH user_dates AS (
+        SELECT DISTINCT user_id, CAST(created_at AT TIME ZONE 'UTC' AS DATE) as study_date
+        FROM study_sessions
+      ),
+      date_groups AS (
+        SELECT user_id,
+               study_date,
+               study_date - (DENSE_RANK() OVER (PARTITION BY user_id ORDER BY study_date))::int AS grp
+        FROM user_dates
+      ),
+      streaks AS (
+        SELECT user_id, COUNT(*) AS streak_length, MAX(study_date) AS end_date
+        FROM date_groups
+        GROUP BY user_id, grp
+      ),
+      current_streaks AS (
+        SELECT user_id, MAX(streak_length) AS days
+        FROM streaks
+        WHERE end_date >= CURRENT_DATE - INTERVAL '1 day'
+        GROUP BY user_id
+      ),
+      ranked_users AS (
+        SELECT 
+          u.id AS user_id,
+          u.name AS name,
+          COALESCE(cs.days, 0) AS days,
+          RANK() OVER (ORDER BY COALESCE(cs.days, 0) DESC) as rank
+        FROM users u
+        JOIN current_streaks cs ON u.id = cs.user_id
+        WHERE COALESCE(cs.days, 0) > 0
+      )
+      SELECT * FROM ranked_users
+      ORDER BY rank ASC, name ASC
+      LIMIT 100;
+    `;
+
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get global leaderboard error:', err);
+    res.status(500).json({ error: 'Failed to fetch global leaderboard' });
+  }
+});
+
 app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   const { mode, count } = req.body;
