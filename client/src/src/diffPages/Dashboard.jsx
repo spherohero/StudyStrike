@@ -3,12 +3,21 @@ import { Link, useNavigate } from "react-router-dom";
 import { BackendAuthConnection } from "../../context/BackendAuthConnection.jsx";
 import Navbar from "../components/Navbar.jsx";
 import QuizSetupModal from "./QuizSetupModal.jsx";
+import { importCardsFromCSV } from "../../lib/CSV_Import.js";
 const DECKS_PER_PAGE = 6;
 function DeckCard({ deck, onDelete, onDuplicate, onExport, onQuiz, onShare}){
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 flex flex-col justify-between h-[220px] hover:shadow-lg transition">
       <div>
-        <h3 className="text-lg font-semibold">{deck.title}</h3>
+        <div className="flex justify-between items-start">
+          <h3 className="text-lg font-semibold">{deck.title}</h3>
+          <Link
+            to={`/leaderboard/${deck.id}`}
+            className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md hover:bg-indigo-200 transition font-medium"
+          >
+            Strikers
+          </Link>
+        </div>
         {deck.description && (
           <p className="text-gray-400 text-sm mt-1 line-clamp-2">{deck.description}</p>
         )}
@@ -91,19 +100,19 @@ export default function Dashboard() {
   async function handleExport(deckId) {
     try {
       const res = await fetch(`/api/decks/${deckId}/export`);
-      const data = await res.json();
       if (res.ok) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        // Server returns CSV directly
+        const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const safeTitle = (data.title || `deck_${deckId}`).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        a.download = `${safeTitle}.json`;
+        a.download = `deck_${deckId}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } else {
+        const data = await res.json();
         alert(data.error || 'Failed to export deck');
       }
     } catch {
@@ -114,36 +123,37 @@ export default function Dashboard() {
   async function handleImport() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
+    input.accept = '.csv';
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
       try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (!data.title || !data.cards || !Array.isArray(data.cards)) {
-          alert('Invalid deck file format');
+        const title = file.name.replace(/\.[^/.]+$/, "").replace(/_StudyStrike$/, "").replace(/_/g, " ");
+
+        const res = await fetch("/api/decks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: user.id, title, description: "Imported from CSV" }),
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'Failed to create deck for import');
           return;
         }
-        const res = await fetch('/api/decks/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: user.id,
-            title: data.title,
-            description: data.description || '',
-            cards: data.cards
-          }),
-        });
-        const result = await res.json();
-        if (res.ok) {
+
+        const newDeckId = data.id;
+        const importResult = await importCardsFromCSV(file, newDeckId);
+
+        if (importResult.success) {
           fetchDecks(); // Refresh
           alert('Deck imported successfully');
         } else {
-          alert(result.error || 'Failed to import deck');
+          fetchDecks(); // Refresh anyway
+          alert(importResult.error || 'Failed to import cards from CSV');
         }
       } catch {
-        alert('Error reading or parsing file');
+        alert('Error parsing or importing CSV file');
       }
     };
     input.click();

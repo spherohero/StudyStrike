@@ -187,24 +187,22 @@ app.get('/api/columns/:table', async (req, res) => {
 // user authentication
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const authenticateToken = (req, res, next) => {
-  // get token securely from cookie
-  // used instead of header as cookie sent over http
-  const token = req.cookies.token;
+// Middleware to authenticate JWT token from cookies
+async function authenticateToken(req, res, next) {
+  const token = req.cookies?.token;
 
   // no token
   if (!token) {
     return res.status(401).json({ error: 'Access denied' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    // fail verification token
-    if (err) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
+  try {
+    const user = jwt.verify(token, JWT_SECRET);
     req.user = user;
     next();
-  });
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid token' });
+  }
 };
 
 //signups
@@ -672,9 +670,10 @@ app.post('/api/decks/:deckId/import', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/decks/:id/duplicate', async (req, res) => {
+app.post('/api/decks/:id/duplicate', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
 
     const originalDeckResult = await pool.query(
       `SELECT * FROM decks WHERE id = $1`,
@@ -687,14 +686,32 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
 
     const originalDeck = originalDeckResult.rows[0];
 
+    // Check if user owns the deck or has access via sharing
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM shared_deck_access WHERE user_id = $1 AND deck_id = $2`,
+      [userId, id]
+    );
+
+    const hasAccess = originalDeck.user_id === userId || accessCheck.rows.length > 0;
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this deck' });
+    }
+
+    // Determine target user_id for the new deck
+    // If owner duplicates: keep same user_id (owner keeps ownership)
+    // If non-owner duplicates: create new deck for the requesting user
+    const isOwner = originalDeck.user_id === userId;
+    const targetUserId = isOwner ? originalDeck.user_id : userId;
+
     const newDeckResult = await pool.query(
       `
-      INSERT INTO decks (user_id, title, description)
-      VALUES ($1, $2, $3)
+      INSERT INTO decks (user_id, title, description, status)
+      VALUES ($1, $2, $3, 'active')
       RETURNING *;
       `,
       [
-        originalDeck.user_id,
+        targetUserId,
         `${originalDeck.title} (Copy)`,
         originalDeck.description
       ]
@@ -702,6 +719,7 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
 
     const newDeck = newDeckResult.rows[0];
 
+    // Copy flashcards only (no quiz/leaderboard history for non-owners)
     const cardsResult = await pool.query(
       `SELECT * FROM flashcards WHERE deck_id = $1`,
       [id]
@@ -717,6 +735,9 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
       );
     }
 
+    // For non-owners: do NOT copy quizzes, minigame_attempts, or study-time
+    // This creates a fresh deck with only flashcards
+
     res.status(201).json({
       success: true,
       message: 'Deck duplicated successfully',
@@ -728,6 +749,64 @@ app.post('/api/decks/:id/duplicate', async (req, res) => {
   }
 });
 
+// Export deck as CSV
+app.get('/api/decks/:deckId/export', authenticateToken, async (req, res) => {
+  try {
+    const { deckId } = req.params;
+    const userId = req.user.id;
+
+    // Check if user owns or has access to the deck
+    const deckResult = await pool.query(
+      `SELECT * FROM decks WHERE id = $1`,
+      [deckId]
+    );
+
+    if (deckResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Deck not found' });
+    }
+
+    const deck = deckResult.rows[0];
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM shared_deck_access WHERE user_id = $1 AND deck_id = $2`,
+      [userId, deckId]
+    );
+
+    const hasAccess = deck.user_id === userId || accessCheck.rows.length > 0;
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'You do not have access to this deck' });
+    }
+
+    // Get all flashcards for this deck
+    const cardsResult = await pool.query(
+      `SELECT front, back FROM flashcards WHERE deck_id = $1`,
+      [deckId]
+    );
+
+    // Generate CSV content
+    const csvRows = [['Front', 'Back']];
+    for (const card of cardsResult.rows) {
+      csvRows.push([card.front, card.back]);
+    }
+
+    const csvContent = csvRows
+      .map(row => row.join(','))
+      .join('\n');
+
+    // Set headers for file download
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${deck.title}.csv"`
+    );
+
+    res.send(csvContent);
+  } catch (err) {
+    console.error('Export deck error:', err);
+    res.status(500).json({ error: 'Failed to export deck' });
+  }
+});
+
 // create quiz
 app.post('/api/quizzes', authenticateToken, async (req, res) => {
   try {
@@ -736,14 +815,17 @@ app.post('/api/quizzes', authenticateToken, async (req, res) => {
     if (!deck_id || !title) {
       return res.status(400).json({ error: 'deck_id and title are required' });
     }
-    //user_id check here for ownership
+    // Check if user owns the deck OR has shared access
     const deckResult = await pool.query(
-      `SELECT * FROM decks WHERE id = $1 AND status = 'active' AND user_id = $2`,
+      `SELECT d.* FROM decks d
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id AND sda.user_id = $2
+       WHERE d.id = $1 AND d.status = 'active'
+       AND (d.user_id = $2 OR sda.user_id = $2)`,
       [deck_id, req.user.id]
     );
 
     if (deckResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Deck not found or not owned' });
+      return res.status(404).json({ error: 'Deck not found or no access' });
     }
 
     const result = await pool.query(
@@ -776,14 +858,17 @@ app.post('/api/quizzes/:quizId/questions', authenticateToken, async (req, res) =
     if (!validOptions.includes(correct_option)) {
       return res.status(400).json({ error: 'correct_option must be A, B, C, or D' });
     }
-    // fix: JOIN decks verify ownership
+    // fix: JOIN decks verify ownership OR shared access
     const quizResult = await pool.query(
-      `SELECT q.* FROM quizzes q JOIN decks d ON q.deck_id = d.id WHERE q.id = $1 AND d.user_id = $2`,
+      `SELECT q.* FROM quizzes q 
+       JOIN decks d ON q.deck_id = d.id
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+       WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)`,
       [quizId, req.user.id]
     );
 
     if (quizResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Quiz not found or not owned' });
+      return res.status(404).json({ error: 'Quiz not found or no access' });
     }
 
     const result = await pool.query(
@@ -880,7 +965,7 @@ app.get('/api/quizzes/:quizId', authenticateToken, async (req, res) => {
 app.post('/api/decks/:deckId/minigame/submit', authenticateToken, async (req, res) => {
   try {
     const { deckId } = req.params;
-    const { moves, timeElapsed } = req.body;
+    const { moves, timeElapsed, pairs } = req.body;
 
     if (moves == null || timeElapsed == null) {
       return res.status(400).json({ error: 'moves and timeElapsed are required' });
@@ -888,11 +973,11 @@ app.post('/api/decks/:deckId/minigame/submit', authenticateToken, async (req, re
 
     const attemptResult = await pool.query(
       `
-      INSERT INTO minigame_attempts (deck_id, user_id, moves, time_elapsed_ms)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO minigame_attempts (deck_id, user_id, moves, time_elapsed_ms, pairs)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *;
       `,
-      [deckId, req.user.id, moves, timeElapsed]
+      [deckId, req.user.id, moves, timeElapsed, pairs || 8]
     );
 
     res.json({
@@ -913,6 +998,19 @@ app.post('/api/quizzes/:quizId/submit', authenticateToken, async (req, res) => {
 
     if (!answers || !Array.isArray(answers)) {
       return res.status(400).json({ error: 'answers array is required' });
+    }
+
+    // Check if user has access to the quiz's deck
+    const accessCheck = await pool.query(
+      `SELECT 1 FROM quizzes q
+       JOIN decks d ON q.deck_id = d.id
+       LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+       WHERE q.id = $1 AND (d.user_id = $2 OR sda.user_id = $2)`,
+      [quizId, req.user.id]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Quiz not found or no access' });
     }
 
     const questionsResult = await pool.query(
@@ -1009,7 +1107,7 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
         UNION ALL
         SELECT 
           ma.user_id,
-          CAST(GREATEST(COALESCE(ROUND((8.0 / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
+          CAST(GREATEST(COALESCE(ROUND((COALESCE(ma.pairs, 8)::numeric / NULLIF(ma.moves, 0)) * 500) - (FLOOR(ma.time_elapsed_ms::numeric / 10000.0) * 10), 0), 0) AS INTEGER) AS points
         FROM minigame_attempts ma
         WHERE ma.deck_id = $1
 
@@ -1053,14 +1151,19 @@ app.get('/api/decks/:deckId/leaderboard', authenticateToken, async (req, res) =>
 });
 
 app.post('/api/decks/:deckId/generate-quiz', authenticateToken, async (req, res) => {
-  const { deckId } =req.params;
-  const {mode, count}= req.body;
-  const deckRes= await pool.query(
-    `SELECT * FROM decks WHERE id = $1 AND user_id = $2 AND status = 'active'`,
+  const { deckId } = req.params;
+  const { mode, count } = req.body;
+  
+  // Check if user owns deck OR has shared access
+  const deckRes = await pool.query(
+    `SELECT d.* FROM decks d
+     LEFT JOIN shared_deck_access sda ON d.id = sda.deck_id
+     WHERE d.id = $1 AND d.status = 'active' AND (d.user_id = $2 OR sda.user_id = $2)`,
     [deckId, req.user.id]
   );
-  if (deckRes.rows.length === 0) return res.status(404).json({ error:'Deck not found or not owned' });
-  const deckDat= deckRes.rows[0];
+  
+  if (deckRes.rows.length === 0) return res.status(404).json({ error: 'Deck not found or no access' });
+  const deckDat = deckRes.rows[0];
   const cardsRes = await pool.query(
     `SELECT * FROM flashcards WHERE deck_id = $1`,
     [deckId]
@@ -1221,9 +1324,106 @@ app.get('/api/decks/:deckId/study-time', authenticateToken, async (req, res) => 
 });
 
 //allows for express and server to wait for client requests on the selected port
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`StudyStrike running on http://localhost:${port}`);
   console.log(`Database test at http://localhost:${port}/db-test`);
+  
+  // database tables on startup
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        pw_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(10) NOT NULL CHECK (role IN ('TEACH', 'STUD')),
+        name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS decks (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT '',
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_code VARCHAR(6) UNIQUE;
+      ALTER TABLE decks ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP;
+      ALTER TABLE minigame_attempts ADD COLUMN IF NOT EXISTS pairs INTEGER DEFAULT 8;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shared_deck_access (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, deck_id)
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minigame_attempts (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        moves INTEGER NOT NULL,
+        time_elapsed_ms INTEGER NOT NULL,
+        pairs INTEGER DEFAULT 8,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS flashcards (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        front TEXT NOT NULL,
+        back TEXT NOT NULL
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quizzes (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quiz_questions (
+        id SERIAL PRIMARY KEY,
+        quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        correct_answer TEXT NOT NULL,
+        options JSONB NOT NULL
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS study_sessions (
+        id SERIAL PRIMARY KEY,
+        deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        duration_seconds INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('Tables initialized');
+  } catch (err) {
+    console.error('Table initialization failed:', err);
+  }
 });
 
 // included nodemon as a node package to instantly update without restarting server
